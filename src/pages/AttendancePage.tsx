@@ -59,6 +59,21 @@ export const AttendancePage: React.FC = () => {
   const [editingAttendee, setEditingAttendee] = useState<EventAttendee | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
+  const filteredAttendees = useMemo(() => {
+    const attendees = event?.attendees || [];
+    return attendees.filter(attendee => {
+      const matchesSearch =
+        (attendee?.name && attendee.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (attendee?.phone && attendee.phone.includes(searchQuery)) ||
+        (attendee?.stcNumber && attendee.stcNumber.includes(searchQuery)) ||
+        (attendee?.email && attendee.email.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      if (!matchesSearch) return false;
+      if (filterStatus === 'all') return true;
+      return attendee?.status === filterStatus;
+    });
+  }, [event?.attendees, searchQuery, filterStatus]);
+
   if (!event) {
     return (
       <div className="bg-white rounded-2xl p-8 sm:p-12 text-center border border-gray-200 shadow-sm">
@@ -81,21 +96,6 @@ export const AttendancePage: React.FC = () => {
   }
 
   const stats = getAttendanceStats(event);
-
-  const filteredAttendees = useMemo(() => {
-    const attendees = event?.attendees || [];
-    return attendees.filter(attendee => {
-      const matchesSearch =
-        (attendee?.name && attendee.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (attendee?.phone && attendee.phone.includes(searchQuery)) ||
-        (attendee?.stcNumber && attendee.stcNumber.includes(searchQuery)) ||
-        (attendee?.email && attendee.email.toLowerCase().includes(searchQuery.toLowerCase()));
-
-      if (!matchesSearch) return false;
-      if (filterStatus === 'all') return true;
-      return attendee?.status === filterStatus;
-    });
-  }, [event?.attendees, searchQuery, filterStatus]);
 
   const handleStatusClick = (personId: string, newStatus: AttendanceStatus) => {
     updateAttendeeStatus(event.id, personId, newStatus);
