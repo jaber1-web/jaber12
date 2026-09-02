@@ -36,7 +36,9 @@ import {
   saveSettingsToFirestore,
   batchImportAllToFirestore,
   checkAndMigrateLocalStorageToFirestore,
+  forceSyncLocalToFirestore,
   clearAllUserDataFromFirestore,
+  testFirestoreConnection,
 } from '../services/firestoreService';
 
 interface AppContextType {
@@ -46,6 +48,10 @@ interface AppContextType {
   isAuthLoading: boolean;
   isDataLoading: boolean;
   isSyncing: boolean;
+  isCloudConnected: boolean;
+  lastSyncedAt: string | null;
+  syncError: string | null;
+  syncNow: () => Promise<void>;
 
   // Data State
   events: EventItem[];
@@ -120,9 +126,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  // Initialize with local cache for instant UI rendering
+  // Initialize with local cache for instant UI rendering with 0ms delay
   const [events, setEvents] = useState<EventItem[]>(() => getStoredEvents());
   const [persons, setPersons] = useState<Person[]>(() => getStoredPersons());
   const [settings, setSettings] = useState<AppSettings>(() => getStoredSettings());
@@ -149,7 +158,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const cred = await signInAnonymously(auth);
           setUser(cred.user);
         } catch (err: any) {
-          // Normal fallback if anonymous auth not enabled
+          // Anonymous auth fallback
         }
       }
     });
@@ -159,38 +168,83 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // 2. Real-time Firestore Subscriptions & Initial Sync
   useEffect(() => {
+    // Test server connectivity on mount
+    testFirestoreConnection()
+      .then((connected) => {
+        setIsCloudConnected(connected);
+      })
+      .catch(() => {});
+
     // Initial check to upload any locally created data to Firestore
-    checkAndMigrateLocalStorageToFirestore().catch(() => {});
+    checkAndMigrateLocalStorageToFirestore()
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
+      .catch(() => {});
 
-    const unsubEvents = subscribeToEvents((firestoreEvents) => {
-      if (firestoreEvents.length > 0) {
-        setEvents(firestoreEvents);
-        saveEvents(firestoreEvents);
-      } else {
-        // If Firestore is empty, check if we have local events and upload them
-        const local = getStoredEvents();
-        if (local.length > 0) {
-          local.forEach((e) => saveEventToFirestore(e).catch(() => {}));
+    const unsubEvents = subscribeToEvents(
+      (firestoreEvents) => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+        setSyncError(null);
+
+        if (firestoreEvents.length > 0) {
+          setEvents(firestoreEvents);
+          saveEvents(firestoreEvents);
+        } else {
+          // If Firestore is empty, check if we have local events to push
+          const local = getStoredEvents();
+          if (local.length > 0) {
+            batchImportAllToFirestore({
+              events: local,
+              persons: getStoredPersons(),
+            }).catch(console.error);
+          } else {
+            setEvents([]);
+            saveEvents([]);
+          }
         }
+      },
+      (err) => {
+        console.warn('Firestore events subscription warning:', err);
+        setSyncError('تعذر الاتصال بالسحابة مؤقتاً، يتم الحفظ محلياً');
       }
-    });
+    );
 
-    const unsubPersons = subscribeToPersons((firestorePersons) => {
-      if (firestorePersons.length > 0) {
-        setPersons(firestorePersons);
-        savePersons(firestorePersons);
-      } else {
-        const local = getStoredPersons();
-        if (local.length > 0) {
-          local.forEach((p) => savePersonToFirestore(p).catch(() => {}));
+    const unsubPersons = subscribeToPersons(
+      (firestorePersons) => {
+        setIsCloudConnected(true);
+        if (firestorePersons.length > 0) {
+          setPersons(firestorePersons);
+          savePersons(firestorePersons);
+        } else {
+          const local = getStoredPersons();
+          if (local.length > 0) {
+            batchImportAllToFirestore({
+              events: getStoredEvents(),
+              persons: local,
+            }).catch(console.error);
+          } else {
+            setPersons([]);
+            savePersons([]);
+          }
         }
+      },
+      (err) => {
+        console.warn('Firestore persons subscription warning:', err);
       }
-    });
+    );
 
-    const unsubSettings = subscribeToSettings((firestoreSettings) => {
-      setSettings(firestoreSettings);
-      saveSettings(firestoreSettings);
-    });
+    const unsubSettings = subscribeToSettings(
+      (firestoreSettings) => {
+        setSettings(firestoreSettings);
+        saveSettings(firestoreSettings);
+      },
+      (err) => {
+        console.warn('Firestore settings subscription warning:', err);
+      }
+    );
 
     return () => {
       unsubEvents();
@@ -218,6 +272,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // Manual Sync trigger
+  const syncNow = async () => {
+    setIsSyncing(true);
+    setSyncError(null);
+    try {
+      const res = await forceSyncLocalToFirestore();
+      setIsCloudConnected(true);
+      setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+    } catch (err: any) {
+      console.error('Manual sync error:', err);
+      setSyncError('تعذر إنهاء المزامنة السحابية');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Update Settings
   const updateSettings = async (newSettings: Partial<AppSettings>) => {
     const updated = {
@@ -230,6 +300,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsSyncing(true);
     try {
       await saveSettingsToFirestore(updated);
+      setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
     } catch (err) {
       console.error('Error saving settings to Firestore:', err);
     } finally {
@@ -294,16 +365,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const newEvent: EventItem = {
       id: `evt-${Date.now()}`,
-      title: eventData.title,
+      title: eventData.title.trim(),
       date: eventData.date,
-      location: eventData.location,
-      notes: eventData.notes,
+      location: (eventData.location || '').trim(),
+      notes: (eventData.notes || '').trim(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       attendees: attendeesList,
     };
 
-    // Immediate state & local storage update
+    // Immediate state & local storage update for instant response
     const updatedEvents = [newEvent, ...events];
     setEvents(updatedEvents);
     saveEvents(updatedEvents);
@@ -314,13 +385,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       savePersons(updatedPersons);
     }
 
-    // Immediate Firestore cloud sync
+    // Direct Firestore cloud sync
     setIsSyncing(true);
+    setSyncError(null);
     Promise.all([
       saveEventToFirestore(newEvent),
       ...newPersonsToAdd.map((p) => savePersonToFirestore(p)),
     ])
-      .catch((err) => console.error('Error creating event in Firestore:', err))
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
+      .catch((err) => {
+        console.error('Error creating event in Firestore:', err);
+        setSyncError('تم الحفظ محلياً، وسيتم رفعه تلقائياً');
+      })
       .finally(() => setIsSyncing(false));
 
     return newEvent;
@@ -328,13 +407,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Update Event
   const updateEvent = (updatedEvent: EventItem) => {
-    const finalEvent = { ...updatedEvent, updatedAt: new Date().toISOString() };
+    const finalEvent = {
+      ...updatedEvent,
+      location: updatedEvent.location || '',
+      notes: updatedEvent.notes || '',
+      updatedAt: new Date().toISOString(),
+    };
     const updatedEvents = events.map((evt) => (evt.id === finalEvent.id ? finalEvent : evt));
     setEvents(updatedEvents);
     saveEvents(updatedEvents);
 
     setIsSyncing(true);
     saveEventToFirestore(finalEvent)
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
       .catch((err) => console.error('Error updating event in Firestore:', err))
       .finally(() => setIsSyncing(false));
   };
@@ -354,6 +442,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setIsSyncing(true);
     deleteEventFromFirestore(eventId)
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
       .catch((err) => console.error('Error deleting event from Firestore:', err))
       .finally(() => setIsSyncing(false));
   };
@@ -375,7 +467,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           return {
             ...att,
             status,
-            markedAt: status !== 'pending' ? new Date().toISOString() : undefined,
+            markedAt: status !== 'pending' ? new Date().toISOString() : '',
           };
         }),
       };
@@ -387,9 +479,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     saveEvents(updatedEvents);
 
     if (updatedEventToSave) {
-      saveEventToFirestore(updatedEventToSave).catch((err) =>
-        console.error('Error updating attendee status in Firestore:', err)
-      );
+      saveEventToFirestore(updatedEventToSave)
+        .then(() => setLastSyncedAt(new Date().toLocaleTimeString('ar-SA')))
+        .catch((err) => console.error('Error updating attendee status in Firestore:', err));
     }
   };
 
@@ -408,7 +500,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         attendees: (evt.attendees || []).map((att) => ({
           ...att,
           status,
-          markedAt: status !== 'pending' ? new Date().toISOString() : undefined,
+          markedAt: status !== 'pending' ? new Date().toISOString() : '',
         })),
       };
       updatedEventToSave = updated;
@@ -419,9 +511,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     saveEvents(updatedEvents);
 
     if (updatedEventToSave) {
-      saveEventToFirestore(updatedEventToSave).catch((err) =>
-        console.error('Error marking all attendees in Firestore:', err)
-      );
+      saveEventToFirestore(updatedEventToSave)
+        .then(() => setLastSyncedAt(new Date().toLocaleTimeString('ar-SA')))
+        .catch((err) => console.error('Error marking all attendees in Firestore:', err));
     }
   };
 
@@ -434,7 +526,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newPersonId = `p-${Date.now()}`;
     const newAttendee: EventAttendee = {
       personId: newPersonId,
-      name: attendeeData.name,
+      name: attendeeData.name.trim(),
       email: attendeeData.email || '',
       phone: attendeeData.phone || '',
       stcNumber: attendeeData.stcNumber || '',
@@ -460,7 +552,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (saveToGlobal) {
       newPerson = {
         id: newPersonId,
-        name: attendeeData.name,
+        name: attendeeData.name.trim(),
         email: attendeeData.email || '',
         phone: attendeeData.phone || '',
         stcNumber: attendeeData.stcNumber || '',
@@ -477,6 +569,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedEventToSave ? saveEventToFirestore(updatedEventToSave) : Promise.resolve(),
       newPerson ? savePersonToFirestore(newPerson) : Promise.resolve(),
     ])
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
       .catch((err) => console.error('Error adding attendee in Firestore:', err))
       .finally(() => setIsSyncing(false));
   };
@@ -495,7 +591,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (saveToGlobal) {
         newPersons.push({
           id: personId,
-          name: att.name,
+          name: att.name.trim(),
           email: att.email || '',
           phone: att.phone || '',
           stcNumber: att.stcNumber || '',
@@ -505,7 +601,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return {
         personId,
-        name: att.name,
+        name: att.name.trim(),
         email: att.email || '',
         phone: att.phone || '',
         stcNumber: att.stcNumber || '',
@@ -539,6 +635,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedEventToSave ? saveEventToFirestore(updatedEventToSave) : Promise.resolve(),
       ...(saveToGlobal ? newPersons.map((p) => savePersonToFirestore(p)) : []),
     ])
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
       .catch(console.error)
       .finally(() => setIsSyncing(false));
   };
@@ -573,7 +673,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     saveEvents(updatedEvents);
 
     if (updatedEventToSave) {
-      saveEventToFirestore(updatedEventToSave).catch(console.error);
+      saveEventToFirestore(updatedEventToSave)
+        .then(() => setLastSyncedAt(new Date().toLocaleTimeString('ar-SA')))
+        .catch(console.error);
     }
   };
 
@@ -595,7 +697,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     saveEvents(updatedEvents);
 
     if (updatedEventToSave) {
-      saveEventToFirestore(updatedEventToSave).catch(console.error);
+      saveEventToFirestore(updatedEventToSave)
+        .then(() => setLastSyncedAt(new Date().toLocaleTimeString('ar-SA')))
+        .catch(console.error);
     }
   };
 
@@ -655,7 +759,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addPerson = (personData: Omit<Person, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newPerson: Person = {
       id: `p-${Date.now()}`,
-      ...personData,
+      name: personData.name.trim(),
+      email: personData.email || '',
+      phone: personData.phone || '',
+      stcNumber: personData.stcNumber || '',
+      notes: personData.notes || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -665,13 +773,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setIsSyncing(true);
     savePersonToFirestore(newPerson)
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
       .catch(console.error)
       .finally(() => setIsSyncing(false));
   };
 
   // Update Person in Directory
   const updatePerson = (updatedPerson: Person) => {
-    const finalPerson = { ...updatedPerson, updatedAt: new Date().toISOString() };
+    const finalPerson = {
+      ...updatedPerson,
+      name: updatedPerson.name.trim(),
+      email: updatedPerson.email || '',
+      phone: updatedPerson.phone || '',
+      stcNumber: updatedPerson.stcNumber || '',
+      notes: updatedPerson.notes || '',
+      updatedAt: new Date().toISOString(),
+    };
     const updatedPersons = persons.map((p) => (p.id === finalPerson.id ? finalPerson : p));
     setPersons(updatedPersons);
     savePersons(updatedPersons);
@@ -710,6 +830,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       savePersonToFirestore(finalPerson),
       ...eventsToUpdate.map((e) => saveEventToFirestore(e)),
     ])
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
       .catch(console.error)
       .finally(() => setIsSyncing(false));
   };
@@ -722,6 +846,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setIsSyncing(true);
     deletePersonFromFirestore(personId)
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
       .catch(console.error)
       .finally(() => setIsSyncing(false));
   };
@@ -730,7 +858,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const importPersons = (newPersonsList: Omit<Person, 'id' | 'createdAt' | 'updatedAt'>[]) => {
     const formatted: Person[] = newPersonsList.map((p, idx) => ({
       id: `p-imp-${Date.now()}-${idx}`,
-      ...p,
+      name: p.name.trim(),
+      email: p.email || '',
+      phone: p.phone || '',
+      stcNumber: p.stcNumber || '',
+      notes: p.notes || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }));
@@ -740,6 +872,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setIsSyncing(true);
     Promise.all(formatted.map((p) => savePersonToFirestore(p)))
+      .then(() => {
+        setIsCloudConnected(true);
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
+      })
       .catch(console.error)
       .finally(() => setIsSyncing(false));
   };
@@ -778,6 +914,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         settings: payload.settings,
       });
       setIsSyncing(false);
+      setIsCloudConnected(true);
+      setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
 
       return {
         success: true,
@@ -802,6 +940,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsSyncing(true);
     await clearAllUserDataFromFirestore();
     setIsSyncing(false);
+    setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
   };
 
   // Clear all data
@@ -816,6 +955,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsSyncing(true);
     await clearAllUserDataFromFirestore();
     setIsSyncing(false);
+    setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
   };
 
   return (
@@ -826,6 +966,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isAuthLoading,
         isDataLoading,
         isSyncing,
+        isCloudConnected,
+        lastSyncedAt,
+        syncError,
+        syncNow,
         events,
         persons,
         settings,

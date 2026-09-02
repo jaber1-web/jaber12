@@ -18,8 +18,7 @@ import {
   ChevronLeft,
   CheckCircle2,
   Cloud,
-  LogOut,
-  User as UserIcon,
+  RefreshCw,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { LogoPreset, ThemeColor } from '../types';
@@ -30,10 +29,10 @@ export const Sidebar: React.FC = () => {
     persons,
     settings,
     setIsCreateEventOpen,
-    user,
     isSyncing,
-    setIsAuthModalOpen,
-    signOutUser,
+    isCloudConnected,
+    lastSyncedAt,
+    syncNow,
   } = useApp();
   const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -220,21 +219,16 @@ export const Sidebar: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-1.5">
-          {user && !user.isAnonymous ? (
-            <div className="flex items-center gap-1 bg-blue-50 border border-blue-200 py-1 px-2 rounded-lg text-xs font-bold text-blue-700">
-              <Cloud className="w-3.5 h-3.5 text-blue-600" />
-              <span className="max-w-[70px] truncate text-[11px]">{user.displayName || 'سحابي'}</span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsAuthModalOpen(true)}
-              className="p-1.5 text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
-              title="تسجيل الدخول السحابي"
-            >
-              <Cloud className="w-4 h-4" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => syncNow()}
+            disabled={isSyncing}
+            className="flex items-center gap-1 p-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
+            title="تحديث ومزامنة السحابة فوراً"
+          >
+            <Cloud className="w-3.5 h-3.5 text-emerald-600" />
+            <RefreshCw className={`w-3 h-3 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+          </button>
 
           <button
             id="mobile-create-event-btn"
@@ -379,40 +373,39 @@ export const Sidebar: React.FC = () => {
         {/* Sidebar Footer Summary */}
         <div className="p-3.5 border-t border-gray-100 bg-gray-50/70 m-2 rounded-xl space-y-2.5">
           {/* Cloud Status */}
-          <div className="bg-white p-2.5 rounded-xl border border-blue-100 shadow-2xs flex items-center justify-between">
+          <div className="bg-white p-2.5 rounded-xl border border-emerald-100 shadow-2xs flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-50 text-emerald-600 shrink-0">
                 <Cloud className="w-4 h-4" />
               </div>
               <div className="overflow-hidden text-right">
-                <div className="text-[11px] font-bold text-gray-800 leading-tight">
-                  {user && !user.isAnonymous ? user.displayName || user.email?.split('@')[0] || 'حساب سحابي' : 'قاعدة بيانات Firestore'}
+                <div className="text-[11px] font-bold text-gray-800 leading-tight flex items-center gap-1">
+                  <span>سحابة Firestore المباشرة</span>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="متصل"></span>
                 </div>
-                <div className="text-[10px] text-emerald-600 flex items-center gap-1 mt-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  {isSyncing ? 'جاري المزامنة...' : 'المزامنة السحابية نشطة'}
+                <div className="text-[10px] text-gray-500 flex items-center gap-1 mt-0.5">
+                  {isSyncing ? (
+                    <span className="text-blue-600 font-medium">جاري المزامنة...</span>
+                  ) : lastSyncedAt ? (
+                    <span className="text-emerald-700 font-medium">بياناتك محفوظة سحابياً {lastSyncedAt}</span>
+                  ) : (
+                    <span className="text-emerald-700 font-medium">مزامنة فورية بدون تسجيل</span>
+                  )}
                 </div>
               </div>
             </div>
 
-            {user && !user.isAnonymous ? (
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={signOutUser}
-                title="تسجيل الخروج"
-                className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                onClick={() => syncNow()}
+                disabled={isSyncing}
+                title="تحديث المزامنة السحابية فوراً"
+                className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsAuthModalOpen(true)}
-                className="text-[10px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-lg transition-colors"
-              >
-                دخول
-              </button>
-            )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-center text-xs">

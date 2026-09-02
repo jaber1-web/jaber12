@@ -11,7 +11,6 @@ import { CreateEventModal } from './components/CreateEventModal';
 import { EditEventModal } from './components/EditEventModal';
 import { ReportModal } from './components/ReportModal';
 import { PdfPreviewModal } from './components/PdfPreviewModal';
-import { AuthModal } from './components/AuthModal';
 
 const AppContent: React.FC = () => {
   const navigate = useNavigate();
@@ -30,8 +29,6 @@ const AppContent: React.FC = () => {
     setReportModalEvent,
     pdfModalEvent,
     setPdfModalEvent,
-    isAuthModalOpen,
-    setIsAuthModalOpen,
   } = useApp();
 
   const getFontSizeClass = () => {
@@ -116,12 +113,6 @@ const AppContent: React.FC = () => {
           event={pdfModalEvent}
         />
       )}
-
-      {/* Cloud Authentication Modal */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-      />
     </div>
   );
 };

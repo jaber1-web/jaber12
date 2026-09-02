@@ -14,8 +14,6 @@ import {
   Flame,
   Sparkles,
   Cloud,
-  LogOut,
-  User as UserIcon,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { LogoPreset, ThemeColor } from '../types';
@@ -26,9 +24,6 @@ export const Navbar: React.FC = () => {
     persons,
     settings,
     setIsCreateEventOpen,
-    user,
-    setIsAuthModalOpen,
-    signOutUser,
     isSyncing,
   } = useApp();
   const location = useLocation();
@@ -181,35 +176,13 @@ export const Navbar: React.FC = () => {
           </NavLink>
         </nav>
 
-        {/* Action Button & Cloud Auth */}
+        {/* Action Button & Direct Cloud Status */}
         <div className="flex items-center gap-2">
-          {user && !user.isAnonymous ? (
-            <div className="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 py-1 px-2.5 rounded-xl text-xs">
-              <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[11px] shrink-0">
-                {user.displayName ? user.displayName.charAt(0).toUpperCase() : <UserIcon className="w-3.5 h-3.5" />}
-              </div>
-              <span className="hidden xl:inline max-w-[120px] truncate text-slate-700 dark:text-slate-200 font-semibold text-[11px]">
-                {user.displayName || user.email?.split('@')[0] || 'حساب سحابي'}
-              </span>
-              <button
-                type="button"
-                onClick={signOutUser}
-                title="تسجيل الخروج"
-                className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsAuthModalOpen(true)}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors"
-            >
-              <Cloud className="w-3.5 h-3.5 text-blue-600" />
-              <span>تسجيل الدخول السحابي</span>
-            </button>
-          )}
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <Cloud className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="text-[11px] font-bold">سحابة فورية</span>
+          </div>
 
           <button
             id="nav-create-event-btn"

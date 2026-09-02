@@ -32,6 +32,7 @@ import {
   KeyRound,
   ShieldAlert,
   ArrowRight,
+  RefreshCw,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useApp } from '../context/AppContext';
@@ -48,10 +49,9 @@ export const SettingsPage: React.FC = () => {
     settings,
     updateSettings,
     events,
-    user,
     isSyncing,
-    setIsAuthModalOpen,
-    signOutUser,
+    lastSyncedAt,
+    syncNow,
     exportAllBackupData,
     importBackupData,
     resetToDefaultData,
@@ -982,40 +982,26 @@ export const SettingsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* User Account Info Bar */}
+            {/* Direct Unified Cloud Access Bar */}
             <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2">
-                <span className="text-blue-200">حالة الحساب السحابي:</span>
-                {user && !user.isAnonymous ? (
-                  <span className="bg-white/20 px-2.5 py-1 rounded-lg font-bold text-white flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                    مسجل بحساب: {user.email || user.displayName}
-                  </span>
-                ) : (
-                  <span className="bg-amber-500/20 text-amber-200 px-2.5 py-1 rounded-lg font-medium border border-amber-400/30">
-                    مساحة عمل فورية (يمكنك ربط بريدك للمزامنة عبر أجهزة متعددة)
-                  </span>
-                )}
+                <span className="text-blue-200 font-medium">نمط المزامنة:</span>
+                <span className="bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 px-3 py-1 rounded-lg font-bold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  وصول مباشر دائم وموحد لجميع أجهزتك (بدون تسجيل دخول)
+                </span>
               </div>
 
               <div>
-                {user && !user.isAnonymous ? (
-                  <button
-                    type="button"
-                    onClick={signOutUser}
-                    className="bg-white/10 hover:bg-rose-600/80 text-white px-3 py-1.5 rounded-lg transition-colors font-bold"
-                  >
-                    تسجيل الخروج
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsAuthModalOpen(true)}
-                    className="bg-white text-blue-900 hover:bg-blue-50 px-3.5 py-1.5 rounded-lg font-bold transition-all shadow-sm"
-                  >
-                    تسجيل الدخول أو إنشاء حساب
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => syncNow()}
+                  disabled={isSyncing}
+                  className="bg-white text-blue-900 hover:bg-blue-50 px-4 py-2 rounded-xl font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50 active:scale-95"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-blue-700 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isSyncing ? 'جاري المزامنة...' : 'مزامنة وتحديث السحابة الآن'}</span>
+                </button>
               </div>
             </div>
           </div>
