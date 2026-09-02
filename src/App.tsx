@@ -87,8 +87,14 @@ const AppContent: React.FC = () => {
             setEditingEvent(null);
           }}
           event={editingEvent}
-          onSave={updated => {
-            updateEvent(updated);
+          onSave={(eventId, title, date, location, notes) => {
+            updateEvent({
+              ...editingEvent,
+              title: title || editingEvent.title,
+              date: date || editingEvent.date,
+              location: location !== undefined ? location : editingEvent.location,
+              notes: notes !== undefined ? notes : editingEvent.notes,
+            });
             setIsEditEventOpen(false);
             setEditingEvent(null);
           }}

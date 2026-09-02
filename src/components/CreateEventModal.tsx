@@ -5,15 +5,26 @@ import { Person } from '../types';
 interface CreateEventModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (title: string, date: string, location?: string, notes?: string, selectedPersons?: Person[]) => void;
-  availablePersons: Person[];
+  onSubmit?: (title: string, date: string, location?: string, notes?: string, selectedPersons?: Person[]) => void;
+  onCreateEvent?: (eventData: {
+    title: string;
+    date: string;
+    location: string;
+    notes?: string;
+    selectedPersonIds: string[];
+    customAttendees: Array<{ name: string; email?: string; phone?: string; stcNumber?: string }>;
+  }) => void;
+  availablePersons?: Person[];
+  allPersons?: Person[];
 }
 
 export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   isOpen,
   onClose,
   onSubmit,
+  onCreateEvent,
   availablePersons,
+  allPersons,
 }) => {
   const today = new Date().toISOString().split('T')[0];
   const [title, setTitle] = useState('');
@@ -26,7 +37,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
   if (!isOpen) return null;
 
-  const personList = availablePersons || [];
+  const personList = availablePersons || allPersons || [];
 
   const filteredPersons = personList.filter(p => {
     const q = personSearch.toLowerCase().trim();
@@ -58,13 +69,26 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     if (!title.trim() || !date) return;
 
     const selectedPersonsList = personList.filter(p => selectedPersonIds.includes(p.id));
-    onSubmit(
-      title.trim(),
-      date,
-      location.trim() || undefined,
-      notes.trim() || undefined,
-      includeExisting ? selectedPersonsList : []
-    );
+    
+    if (typeof onCreateEvent === 'function') {
+      onCreateEvent({
+        title: title.trim(),
+        date,
+        location: location.trim(),
+        notes: notes.trim() || undefined,
+        selectedPersonIds: includeExisting ? selectedPersonIds : [],
+        customAttendees: [],
+      });
+    } else if (typeof onSubmit === 'function') {
+      onSubmit(
+        title.trim(),
+        date,
+        location.trim() || undefined,
+        notes.trim() || undefined,
+        includeExisting ? selectedPersonsList : []
+      );
+    }
+    
     setTitle('');
     setLocation('');
     setNotes('');
