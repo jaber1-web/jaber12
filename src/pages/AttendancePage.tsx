@@ -22,6 +22,7 @@ import {
   Sparkles,
   LayoutGrid,
   List,
+  MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { AttendanceStatus, EventAttendee } from '../types';
@@ -33,6 +34,8 @@ import {
 } from '../utils/exportUtils';
 import { AddAttendeeModal } from '../components/AddAttendeeModal';
 import { EditAttendeeModal } from '../components/EditAttendeeModal';
+import { WhatsAppMessageModal } from '../components/WhatsAppMessageModal';
+import { BulkWhatsAppModal } from '../components/BulkWhatsAppModal';
 
 export const AttendancePage: React.FC = () => {
   const { eventId } = useParams<{ eventId: string }>();
@@ -59,6 +62,9 @@ export const AttendancePage: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingAttendee, setEditingAttendee] = useState<EventAttendee | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [whatsAppAttendee, setWhatsAppAttendee] = useState<EventAttendee | null>(null);
+  const [isBulkWhatsAppOpen, setIsBulkWhatsAppOpen] = useState(false);
+  const [bulkWhatsAppTarget, setBulkWhatsAppTarget] = useState<'absent' | 'present' | 'all'>('absent');
 
   const filteredAttendees = useMemo(() => {
     const attendees = event?.attendees || [];
@@ -204,6 +210,21 @@ export const AttendancePage: React.FC = () => {
             >
               <Share2 className="w-4 h-4 text-gray-600" />
               <span className="hidden sm:inline">مشاركة</span>
+            </button>
+
+            <button
+              type="button"
+              id="attendance-whatsapp-bulk-btn"
+              onClick={() => {
+                setBulkWhatsAppTarget(stats.absent > 0 ? 'absent' : 'all');
+                setIsBulkWhatsAppOpen(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 hover:shadow-emerald-600/20"
+              title="مراسلة المشاركين عبر واتساب"
+            >
+              <MessageCircle className="w-4 h-4 text-white" />
+              <span className="hidden sm:inline">مراسلة</span>
+              <span>واتساب</span>
             </button>
           </div>
         </div>
@@ -363,6 +384,36 @@ export const AttendancePage: React.FC = () => {
         </div>
       </div>
 
+      {/* Absentees Alert & Follow-up Banner */}
+      {stats.absent > 0 && (
+        <div className="bg-rose-50/90 border border-rose-200 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 font-bold flex items-center justify-center text-sm shrink-0 border border-rose-200 font-mono">
+              {stats.absent}
+            </div>
+            <div>
+              <p className="font-bold text-xs sm:text-sm text-rose-900 leading-tight">
+                يوجد {stats.absent} غائبين في هذه الفعالية
+              </p>
+              <p className="text-[11px] sm:text-xs text-rose-700 mt-0.5">
+                يمكنك إرسال رسائل استفسار واعتذار واطمئنان لكل غائب عبر واتساب بضغطة زر واحدة.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setBulkWhatsAppTarget('absent');
+              setIsBulkWhatsAppOpen(true);
+            }}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer shrink-0"
+          >
+            <MessageCircle className="w-4 h-4" />
+            <span>تنبيه واستفسار الغائبين</span>
+          </button>
+        </div>
+      )}
+
       {/* Main Attendees Content: Mobile-First Touch Cards OR Responsive Table */}
       {viewMode === 'cards' ? (
         /* Mobile Touch Cards View (Ideal for phone screen & quick tap) */
@@ -418,6 +469,14 @@ export const AttendancePage: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setWhatsAppAttendee(attendee)}
+                        className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                        title="إرسال رسالة واتساب (تذكير / شكر / استفسار غياب)"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => setEditingAttendee(attendee)}
@@ -618,6 +677,14 @@ export const AttendancePage: React.FC = () => {
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
+                              onClick={() => setWhatsAppAttendee(attendee)}
+                              className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                              title="إرسال رسالة واتساب (تذكير / شكر / استفسار غياب)"
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setEditingAttendee(attendee)}
                               className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
                               title="تعديل"
@@ -734,6 +801,26 @@ export const AttendancePage: React.FC = () => {
             editAttendeeInEvent(event.id, updated, updateGlobal);
             setEditingAttendee(null);
           }}
+        />
+      )}
+
+      {/* WhatsApp Individual Messaging Modal */}
+      {whatsAppAttendee && (
+        <WhatsAppMessageModal
+          isOpen={!!whatsAppAttendee}
+          onClose={() => setWhatsAppAttendee(null)}
+          attendee={whatsAppAttendee}
+          event={event}
+        />
+      )}
+
+      {/* WhatsApp Bulk / Absentees Messaging Modal */}
+      {isBulkWhatsAppOpen && (
+        <BulkWhatsAppModal
+          isOpen={isBulkWhatsAppOpen}
+          onClose={() => setIsBulkWhatsAppOpen(false)}
+          event={event}
+          initialTarget={bulkWhatsAppTarget}
         />
       )}
     </motion.div>

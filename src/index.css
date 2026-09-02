@@ -1,11 +1,241 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   body {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Cairo', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background-color: #F5F7FA;
     color: #1A1A1A;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  html.dark body {
+    background-color: #090D16;
+    color: #F8FAFC;
+  }
+}
+
+/* Luxurious Dark Mode Enhancements */
+html.dark .bg-white:not(.preserve-light) {
+  background-color: #131D2E !important;
+}
+
+html.dark [class*="bg-white/80"]:not(.preserve-light) {
+  background-color: #1B2840 !important;
+  color: #E2E8F0 !important;
+}
+
+html.dark [class*="bg-white/90"]:not(.preserve-light) {
+  background-color: #162238 !important;
+  color: #F8FAFC !important;
+}
+
+html.dark .bg-gray-50:not(.preserve-light),
+html.dark [class*="bg-gray-50"]:not(.preserve-light),
+html.dark .bg-\[\#F8F9FA\]:not(.preserve-light),
+html.dark .bg-\[\#F5F7FA\]:not(.preserve-light) {
+  background-color: #0B1220 !important;
+}
+
+html.dark .bg-gray-100:not(.preserve-light),
+html.dark [class*="bg-gray-100"]:not(.preserve-light) {
+  background-color: #182338 !important;
+}
+
+html.dark .bg-gray-200:not(.preserve-light),
+html.dark [class*="bg-gray-200"]:not(.preserve-light) {
+  background-color: #202F49 !important;
+}
+
+/* Modal Headers vs Button with #1A1A1A */
+html.dark div.bg-\[\#1A1A1A\]:not(.preserve-light) {
+  background-color: #0E1626 !important;
+  border-bottom: 1px solid #23314B !important;
+}
+
+html.dark button.bg-\[\#1A1A1A\]:not(.preserve-light) {
+  background-color: #2563EB !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+}
+
+html.dark .border-gray-100:not(.preserve-light),
+html.dark .border-gray-200:not(.preserve-light),
+html.dark .border-gray-300:not(.preserve-light),
+html.dark [class*="border-gray-"]:not(.preserve-light) {
+  border-color: #23314B !important;
+}
+
+/* Typography Contrast in Dark Mode */
+html.dark .text-\[\#1A1A1A\]:not(.preserve-light),
+html.dark .text-gray-900:not(.preserve-light),
+html.dark .text-gray-800:not(.preserve-light) {
+  color: #F8FAFC !important;
+}
+
+html.dark .text-gray-700:not(.preserve-light) {
+  color: #E2E8F0 !important;
+}
+
+html.dark .text-gray-600:not(.preserve-light) {
+  color: #CBD5E1 !important;
+}
+
+html.dark .text-gray-500:not(.preserve-light) {
+  color: #94A3B8 !important;
+}
+
+html.dark .text-gray-400:not(.preserve-light) {
+  color: #64748B !important;
+}
+
+/* Accent Links & Icons */
+html.dark .text-blue-600 {
+  color: #60A5FA !important;
+}
+html.dark .text-emerald-600 {
+  color: #34D399 !important;
+}
+html.dark .text-rose-600 {
+  color: #FB7185 !important;
+}
+html.dark .text-amber-600 {
+  color: #FBBF24 !important;
+}
+html.dark .text-purple-600 {
+  color: #C084FC !important;
+}
+
+/* Hover States */
+html.dark .hover\:bg-gray-50:hover:not(.preserve-light),
+html.dark [class*="hover:bg-gray-50"]:hover:not(.preserve-light) {
+  background-color: #1A273F !important;
+}
+
+html.dark .hover\:bg-gray-100:hover:not(.preserve-light),
+html.dark [class*="hover:bg-gray-100"]:hover:not(.preserve-light) {
+  background-color: #22324F !important;
+}
+
+html.dark .hover\:bg-gray-200:hover:not(.preserve-light) {
+  background-color: #2D4164 !important;
+}
+
+/* Form Controls & Inputs */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not(.preserve-light),
+html.dark textarea:not(.preserve-light),
+html.dark select:not(.preserve-light) {
+  background-color: #0B1220 !important;
+  color: #F8FAFC !important;
+  border-color: #23314B !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748B !important;
+}
+
+html.dark input:focus:not(.preserve-light),
+html.dark textarea:focus:not(.preserve-light),
+html.dark select:focus:not(.preserve-light) {
+  background-color: #10192A !important;
+  border-color: #3B82F6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25) !important;
+}
+
+/* Tables in Dark Mode */
+html.dark thead {
+  background-color: #0B1220 !important;
+}
+
+html.dark thead th {
+  border-color: #23314B !important;
+  color: #94A3B8 !important;
+}
+
+html.dark tbody tr {
+  border-color: #18243A !important;
+}
+
+html.dark tbody tr:hover {
+  background-color: #162339 !important;
+}
+
+/* Custom smooth dark scrollbars */
+html.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+html.dark ::-webkit-scrollbar-track {
+  background: #090D16;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #23314B;
+  border-radius: 4px;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #334668;
+}
+
+/* Glowing Dark Badges & Accents */
+html.dark [class*="bg-blue-50"]:not(.preserve-light) {
+  background-color: rgba(59, 130, 246, 0.16) !important;
+  color: #93C5FD !important;
+}
+html.dark [class*="bg-emerald-50"]:not(.preserve-light) {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+  color: #6EE7B7 !important;
+}
+html.dark [class*="bg-rose-50"]:not(.preserve-light) {
+  background-color: rgba(244, 63, 94, 0.16) !important;
+  color: #FDA4AF !important;
+}
+html.dark [class*="bg-amber-50"]:not(.preserve-light) {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+  color: #FCD34D !important;
+}
+html.dark [class*="bg-purple-50"]:not(.preserve-light) {
+  background-color: rgba(168, 85, 247, 0.16) !important;
+  color: #D8B4FE !important;
+}
+html.dark [class*="bg-teal-50"]:not(.preserve-light) {
+  background-color: rgba(20, 184, 166, 0.16) !important;
+  color: #5EEAD4 !important;
+}
+
+html.dark [class*="border-blue-"]:not(.preserve-light) {
+  border-color: rgba(59, 130, 246, 0.35) !important;
+}
+html.dark [class*="border-emerald-"]:not(.preserve-light) {
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+html.dark [class*="border-rose-"]:not(.preserve-light) {
+  border-color: rgba(244, 63, 94, 0.35) !important;
+}
+html.dark [class*="border-amber-"]:not(.preserve-light) {
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+
+html.dark .text-blue-900:not(.preserve-light),
+html.dark .text-blue-950:not(.preserve-light) {
+  color: #BFDBFE !important;
+}
+html.dark .text-emerald-900:not(.preserve-light),
+html.dark .text-emerald-950:not(.preserve-light) {
+  color: #A7F3D0 !important;
+}
+html.dark .text-rose-900:not(.preserve-light),
+html.dark .text-rose-950:not(.preserve-light) {
+  color: #FECDD3 !important;
+}
+html.dark .text-amber-900:not(.preserve-light),
+html.dark .text-amber-950:not(.preserve-light) {
+  color: #FDE68A !important;
 }
 
 @media print {

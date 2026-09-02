@@ -19,6 +19,8 @@ import {
   CheckCircle2,
   Cloud,
   RefreshCw,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { LogoPreset, ThemeColor } from '../types';
@@ -33,6 +35,8 @@ export const Sidebar: React.FC = () => {
     isCloudConnected,
     lastSyncedAt,
     syncNow,
+    isDarkMode,
+    toggleThemeMode,
   } = useApp();
   const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -221,6 +225,20 @@ export const Sidebar: React.FC = () => {
         <div className="flex items-center gap-1.5">
           <button
             type="button"
+            onClick={() => toggleThemeMode()}
+            className="p-1.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer border border-gray-200 shadow-2xs"
+            title={isDarkMode ? 'التبديل إلى الوضع الفاتح' : 'التبديل إلى الوضع الليلي الداكن'}
+            aria-label="تبديل وضع الإضاءة"
+          >
+            {isDarkMode ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-slate-700" />
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => syncNow()}
             disabled={isSyncing}
             className="flex items-center gap-1 p-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
@@ -407,6 +425,26 @@ export const Sidebar: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {/* Quick Dark Mode Switch */}
+          <button
+            type="button"
+            onClick={() => toggleThemeMode()}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white border border-gray-200/80 shadow-2xs hover:bg-gray-50 transition-all cursor-pointer group"
+            title={isDarkMode ? 'التبديل إلى الوضع الفاتح' : 'التبديل إلى الوضع الليلي'}
+          >
+            <div className="flex items-center gap-2">
+              <div className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${isDarkMode ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-100 text-slate-700'}`}>
+                {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </div>
+              <span className="text-xs font-bold text-gray-700">
+                {isDarkMode ? 'الوضع الليلي الفاخر' : 'الوضع الفاتح الناصع'}
+              </span>
+            </div>
+            <div className={`w-8 h-4.5 rounded-full p-0.5 transition-colors flex items-center ${isDarkMode ? 'bg-blue-600 justify-end' : 'bg-gray-300 justify-start'}`}>
+              <div className="w-3.5 h-3.5 rounded-full bg-white shadow-xs"></div>
+            </div>
+          </button>
 
           <div className="grid grid-cols-2 gap-2 text-center text-xs">
             <div className="bg-white p-2 rounded-lg border border-gray-200/80 shadow-2xs">

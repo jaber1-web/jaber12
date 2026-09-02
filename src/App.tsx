@@ -42,7 +42,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen bg-[#F8F9FA] text-[#1A1A1A] flex flex-col font-sans selection:bg-blue-100 selection:text-blue-900 ${getFontSizeClass()}`} dir="rtl">
+    <div className={`min-h-screen bg-[#F8F9FA] dark:bg-[#090D16] text-[#1A1A1A] dark:text-[#F8FAFC] flex flex-col font-sans transition-colors duration-200 selection:bg-blue-500/20 selection:text-blue-500 ${getFontSizeClass()}`} dir="rtl">
       {/* Main Responsive Sidebar (Desktop Fixed Right, Mobile Slide-over Drawer) */}
       <Sidebar />
 

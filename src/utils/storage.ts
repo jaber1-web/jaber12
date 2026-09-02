@@ -39,7 +39,14 @@ export function getStoredPersons(): Person[] {
       localStorage.setItem(STORAGE_PERSONS_KEY, JSON.stringify(INITIAL_PERSONS));
       return INITIAL_PERSONS;
     }
-    return JSON.parse(raw);
+    const parsed: Person[] = JSON.parse(raw);
+    const cleaned = (Array.isArray(parsed) ? parsed : []).filter(
+      (p) => p && p.id && !p.id.includes('batch-test') && p.name !== 'Batch Person' && !p.id.includes('verify-')
+    );
+    if (cleaned.length !== parsed.length) {
+      localStorage.setItem(STORAGE_PERSONS_KEY, JSON.stringify(cleaned));
+    }
+    return cleaned;
   } catch (e) {
     console.error('Error loading persons', e);
     return INITIAL_PERSONS;
@@ -122,7 +129,14 @@ export function getStoredEvents(): EventItem[] {
       localStorage.setItem(STORAGE_EVENTS_KEY, JSON.stringify(INITIAL_EVENTS));
       return INITIAL_EVENTS;
     }
-    return JSON.parse(raw);
+    const parsed: EventItem[] = JSON.parse(raw);
+    const cleaned = (Array.isArray(parsed) ? parsed : []).filter(
+      (e) => e && e.id && !e.id.includes('batch-test') && e.title !== 'Batch Event' && !e.id.includes('verify-')
+    );
+    if (cleaned.length !== parsed.length) {
+      localStorage.setItem(STORAGE_EVENTS_KEY, JSON.stringify(cleaned));
+    }
+    return cleaned;
   } catch (e) {
     console.error('Error loading events', e);
     return INITIAL_EVENTS;

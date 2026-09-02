@@ -351,18 +351,27 @@ export async function batchImportAllToFirestore(data: {
 }
 
 /**
- * Migrate existing local storage data to Firestore if Firestore database has no events
+ * Migrate existing local storage data to Firestore once if needed
  */
 export async function checkAndMigrateLocalStorageToFirestore(): Promise<void> {
   try {
+    const MIGRATION_KEY = 'attendance_initial_firestore_migration_done';
+    if (localStorage.getItem(MIGRATION_KEY) === 'true') {
+      return;
+    }
+
     const eventsSnap = await getDocs(getEventsCollection());
     const personsSnap = await getDocs(getPersonsCollection());
 
-    const localEvents = getStoredEvents();
-    const localPersons = getStoredPersons();
+    const localEvents = getStoredEvents().filter(
+      (e) => e && e.id && !e.id.includes('batch-test') && e.title !== 'Batch Event' && !e.id.includes('verify-')
+    );
+    const localPersons = getStoredPersons().filter(
+      (p) => p && p.id && !p.id.includes('batch-test') && p.name !== 'Batch Person' && !p.id.includes('verify-')
+    );
     const localSettings = getStoredSettings();
 
-    // If Firestore has no valid events but local storage has events, upload them to Firestore
+    // Only migrate once if Firestore has nothing and local storage has user-created data
     if (eventsSnap.empty && localEvents.length > 0) {
       await batchImportAllToFirestore({
         events: localEvents,
@@ -376,6 +385,8 @@ export async function checkAndMigrateLocalStorageToFirestore(): Promise<void> {
         settings: localSettings,
       });
     }
+
+    localStorage.setItem(MIGRATION_KEY, 'true');
   } catch (e) {
     console.warn('Initial migration check warning:', e);
   }
@@ -393,88 +404,34 @@ export async function forceSyncLocalToFirestore(): Promise<{
     const eventsSnap = await getDocs(getEventsCollection());
     const personsSnap = await getDocs(getPersonsCollection());
 
-    const remoteEventsMap = new Map<string, EventItem>();
+    const remoteEvents: EventItem[] = [];
     eventsSnap.forEach((d) => {
       const data = d.data() as EventItem;
-      if (data && data.title) {
-        remoteEventsMap.set(d.id, { ...data, id: d.id });
+      if (data && data.title && !d.id.includes('batch-test') && data.title !== 'Batch Event' && !d.id.includes('verify-')) {
+        remoteEvents.push({ ...data, id: d.id });
       }
     });
 
-    const remotePersonsMap = new Map<string, Person>();
+    const remotePersons: Person[] = [];
     personsSnap.forEach((d) => {
       const data = d.data() as Person;
-      if (data && data.name) {
-        remotePersonsMap.set(d.id, { ...data, id: d.id });
+      if (data && data.name && !d.id.includes('batch-test') && data.name !== 'Batch Person' && !d.id.includes('verify-')) {
+        remotePersons.push({ ...data, id: d.id });
       }
     });
 
-    // 2. Read local docs
-    const localEvents = getStoredEvents();
-    const localPersons = getStoredPersons();
-    const localSettings = getStoredSettings();
-
-    // 3. Bidirectional merge for events
-    const mergedEventsMap = new Map<string, EventItem>(remoteEventsMap);
-    localEvents.forEach((localEvt) => {
-      if (!localEvt?.id) return;
-      const remoteEvt = mergedEventsMap.get(localEvt.id);
-      if (!remoteEvt) {
-        mergedEventsMap.set(localEvt.id, localEvt);
-      } else {
-        const localTime = new Date(localEvt.updatedAt || localEvt.createdAt || 0).getTime();
-        const remoteTime = new Date(remoteEvt.updatedAt || remoteEvt.createdAt || 0).getTime();
-        if (localTime > remoteTime) {
-          mergedEventsMap.set(localEvt.id, localEvt);
-        }
-      }
-    });
-
-    // 4. Bidirectional merge for persons
-    const mergedPersonsMap = new Map<string, Person>(remotePersonsMap);
-    localPersons.forEach((localP) => {
-      if (!localP?.id) return;
-      const remoteP = mergedPersonsMap.get(localP.id);
-      if (!remoteP) {
-        mergedPersonsMap.set(localP.id, localP);
-      } else {
-        const localTime = new Date(localP.updatedAt || localP.createdAt || 0).getTime();
-        const remoteTime = new Date(remoteP.updatedAt || remoteP.createdAt || 0).getTime();
-        if (localTime > remoteTime) {
-          mergedPersonsMap.set(localP.id, localP);
-        }
-      }
-    });
-
-    const mergedEvents = Array.from(mergedEventsMap.values());
-    const mergedPersons = Array.from(mergedPersonsMap.values());
-
-    // Update local cache
-    saveEvents(mergedEvents);
-    savePersons(mergedPersons);
-
-    // Commit all merged records back to Firestore
-    await batchImportAllToFirestore({
-      events: mergedEvents,
-      persons: mergedPersons,
-      settings: localSettings,
-    });
+    // Update local storage to match cloud state
+    saveEvents(remoteEvents);
+    savePersons(remotePersons);
 
     return {
-      eventsCount: mergedEvents.length,
-      personsCount: mergedPersons.length,
+      eventsCount: remoteEvents.length,
+      personsCount: remotePersons.length,
     };
   } catch (error) {
-    console.error('Error during bidirectional sync:', error);
-    // Fallback: still push local
+    console.error('Error during cloud sync:', error);
     const localEvents = getStoredEvents();
     const localPersons = getStoredPersons();
-    const localSettings = getStoredSettings();
-    await batchImportAllToFirestore({
-      events: localEvents,
-      persons: localPersons,
-      settings: localSettings,
-    });
     return {
       eventsCount: localEvents.length,
       personsCount: localPersons.length,

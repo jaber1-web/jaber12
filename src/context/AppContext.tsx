@@ -13,6 +13,7 @@ import {
   EventAttendee,
   AttendanceStatus,
   AppSettings,
+  ThemeMode,
 } from '../types';
 import {
   DEFAULT_SETTINGS,
@@ -106,7 +107,10 @@ interface AppContextType {
   setIsAuthModalOpen: (open: boolean) => void;
   signOutUser: () => Promise<void>;
 
-  // Active modals & selected state
+  // Modals & Theme State
+  isDarkMode: boolean;
+  toggleThemeMode: () => void;
+  setThemeMode: (mode: ThemeMode) => void;
   reportModalEvent: EventItem | null;
   setReportModalEvent: (event: EventItem | null) => void;
   pdfModalEvent: EventItem | null;
@@ -189,22 +193,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setLastSyncedAt(new Date().toLocaleTimeString('ar-SA'));
         setSyncError(null);
 
-        if (firestoreEvents.length > 0) {
-          setEvents(firestoreEvents);
-          saveEvents(firestoreEvents);
-        } else {
-          // If Firestore is empty, check if we have local events to push
-          const local = getStoredEvents();
-          if (local.length > 0) {
-            batchImportAllToFirestore({
-              events: local,
-              persons: getStoredPersons(),
-            }).catch(console.error);
-          } else {
-            setEvents([]);
-            saveEvents([]);
-          }
-        }
+        const validEvents = firestoreEvents.filter(
+          (e) => e && e.id && !e.id.includes('batch-test') && e.title !== 'Batch Event' && !e.id.includes('verify-')
+        );
+
+        setEvents(validEvents);
+        saveEvents(validEvents);
       },
       (err) => {
         console.warn('Firestore events subscription warning:', err);
@@ -215,21 +209,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const unsubPersons = subscribeToPersons(
       (firestorePersons) => {
         setIsCloudConnected(true);
-        if (firestorePersons.length > 0) {
-          setPersons(firestorePersons);
-          savePersons(firestorePersons);
-        } else {
-          const local = getStoredPersons();
-          if (local.length > 0) {
-            batchImportAllToFirestore({
-              events: getStoredEvents(),
-              persons: local,
-            }).catch(console.error);
-          } else {
-            setPersons([]);
-            savePersons([]);
-          }
-        }
+        const validPersons = firestorePersons.filter(
+          (p) => p && p.id && !p.id.includes('batch-test') && p.name !== 'Batch Person' && !p.id.includes('verify-')
+        );
+        setPersons(validPersons);
+        savePersons(validPersons);
       },
       (err) => {
         console.warn('Firestore persons subscription warning:', err);
@@ -253,14 +237,54 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, []);
 
+  // Dynamic dark mode state computation
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const s = getStoredSettings();
+    if (s.mode === 'dark') return true;
+    if (s.mode === 'light') return false;
+    return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
   // Apply dark mode & theme preferences to root element
   useEffect(() => {
-    if (settings.mode === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
+    const updateTheme = () => {
+      let isDark = false;
+      if (settings.mode === 'dark') {
+        isDark = true;
+      } else if (settings.mode === 'light') {
+        isDark = false;
+      } else {
+        isDark = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      }
+
+      setIsDarkMode(isDark);
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = 'dark';
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.documentElement.style.colorScheme = 'light';
+      }
+    };
+
+    updateTheme();
+
+    if (settings.mode === 'system' && typeof window !== 'undefined' && window.matchMedia) {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const listener = () => updateTheme();
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
     }
   }, [settings.mode]);
+
+  const toggleThemeMode = () => {
+    const nextMode: ThemeMode = isDarkMode ? 'light' : 'dark';
+    updateSettings({ mode: nextMode });
+  };
+
+  const setThemeMode = (mode: ThemeMode) => {
+    updateSettings({ mode });
+  };
 
   // Sign out user
   const signOutUser = async () => {
@@ -996,6 +1020,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isAuthModalOpen,
         setIsAuthModalOpen,
         signOutUser,
+        isDarkMode,
+        toggleThemeMode,
+        setThemeMode,
         reportModalEvent,
         setReportModalEvent,
         pdfModalEvent,

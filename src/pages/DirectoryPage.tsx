@@ -18,11 +18,13 @@ import {
   CheckCircle2,
   LayoutGrid,
   List,
+  MessageCircle,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Person } from '../types';
 import { useApp } from '../context/AppContext';
 import { motion } from 'motion/react';
+import { openWhatsAppChat } from '../utils/whatsappUtils';
 
 export const DirectoryPage: React.FC = () => {
   const navigate = useNavigate();
@@ -357,6 +359,19 @@ export const DirectoryPage: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
+                      {Boolean(person.phone || person.stcNumber) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const p = person.phone || person.stcNumber;
+                            openWhatsAppChat(p, `السلام عليكم ورحمة الله وبركاته أخي ${person.name} 🌸`);
+                          }}
+                          className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                          title="محادثة واتساب سريعة"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setEditingPerson(person)}
@@ -498,6 +513,19 @@ export const DirectoryPage: React.FC = () => {
 
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-1">
+                            {Boolean(person.phone || person.stcNumber) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const p = person.phone || person.stcNumber;
+                                  openWhatsAppChat(p, `السلام عليكم ورحمة الله وبركاته أخي ${person.name} 🌸`);
+                                }}
+                                className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                                title="محادثة واتساب سريعة"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => setEditingPerson(person)}
@@ -658,21 +686,20 @@ export const DirectoryPage: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">رقم الجوال</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">رقم الجوال (اختياري)</label>
                   <input
                     type="tel"
-                    value={editingPerson.phone}
+                    value={editingPerson.phone || ''}
                     onChange={e => setEditingPerson({ ...editingPerson, phone: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-left font-mono text-[#1A1A1A]"
                     dir="ltr"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">رقم جوال STC *</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">رقم جوال STC (اختياري)</label>
                   <input
                     type="tel"
-                    required
-                    value={editingPerson.stcNumber}
+                    value={editingPerson.stcNumber || ''}
                     onChange={e => setEditingPerson({ ...editingPerson, stcNumber: e.target.value })}
                     placeholder="05xxxxxxxx"
                     className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-left font-mono text-[#1A1A1A]"
@@ -682,10 +709,10 @@ export const DirectoryPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">البريد الإلكتروني</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">البريد الإلكتروني (اختياري)</label>
                 <input
                   type="email"
-                  value={editingPerson.email}
+                  value={editingPerson.email || ''}
                   onChange={e => setEditingPerson({ ...editingPerson, email: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-left font-mono text-[#1A1A1A]"
                   dir="ltr"

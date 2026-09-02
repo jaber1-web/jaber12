@@ -40,10 +40,6 @@ export const EditAttendeeModal: React.FC<EditAttendeeModalProps> = ({
       setError('يرجى كتابة الاسم');
       return;
     }
-    if (!phone.trim() && !stcNumber.trim()) {
-      setError('يرجى كتابة رقم الجوال أو رقم جوال STC');
-      return;
-    }
 
     const updated: EventAttendee = {
       ...attendee,
@@ -123,14 +119,14 @@ export const EditAttendeeModal: React.FC<EditAttendeeModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">
-                رقم الجوال <span className="text-red-500">*</span>
+                رقم الجوال (اختياري)
               </label>
               <input
                 type="tel"
                 id="edit-attendee-phone"
-                required
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
+                placeholder="05xxxxxxxx"
                 className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-[#1A1A1A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-left font-mono"
                 dir="ltr"
               />
@@ -138,12 +134,11 @@ export const EditAttendeeModal: React.FC<EditAttendeeModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">
-                رقم جوال STC <span className="text-red-500">*</span>
+                رقم جوال STC (اختياري)
               </label>
               <input
                 type="tel"
                 id="edit-attendee-stc"
-                required
                 value={stcNumber}
                 onChange={e => setStcNumber(e.target.value)}
                 placeholder="05xxxxxxxx"
