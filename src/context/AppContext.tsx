@@ -57,6 +57,11 @@ interface AppContextType {
     attendeeData: { name: string; email?: string; phone?: string; stcNumber?: string },
     saveToGlobal: boolean
   ) => void;
+  addMultipleAttendeesToEvent: (
+    eventId: string,
+    attendeesData: Array<{ name: string; email?: string; phone?: string; stcNumber?: string }>,
+    saveToGlobal: boolean
+  ) => void;
   addExistingPersonsToEvent: (eventId: string, selectedPersons: Person[]) => void;
   removeAttendeeFromEvent: (eventId: string, personId: string) => void;
   editAttendeeInEvent: (eventId: string, updatedAttendee: EventAttendee, updateGlobal: boolean) => void;
@@ -482,6 +487,67 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // Add Multiple Attendees to Event (e.g. from Excel or Bulk Text)
+  const addMultipleAttendeesToEvent = (
+    eventId: string,
+    attendeesData: Array<{ name: string; email?: string; phone?: string; stcNumber?: string }>,
+    saveToGlobal: boolean
+  ) => {
+    if (!attendeesData || attendeesData.length === 0) return;
+
+    const newPersons: Person[] = [];
+    const newAttendees: EventAttendee[] = attendeesData.map((att, idx) => {
+      const personId = `p-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`;
+      if (saveToGlobal) {
+        newPersons.push({
+          id: personId,
+          name: att.name,
+          email: att.email || '',
+          phone: att.phone || '',
+          stcNumber: att.stcNumber || '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      return {
+        personId,
+        name: att.name,
+        email: att.email || '',
+        phone: att.phone || '',
+        stcNumber: att.stcNumber || '',
+        status: 'pending' as const,
+      };
+    });
+
+    let updatedEventToSave: EventItem | null = null;
+    setEvents((prev) =>
+      prev.map((evt) => {
+        if (evt.id !== eventId) return evt;
+        const updated = {
+          ...evt,
+          updatedAt: new Date().toISOString(),
+          attendees: [...newAttendees, ...(evt.attendees || [])],
+        };
+        updatedEventToSave = updated;
+        return updated;
+      })
+    );
+
+    if (saveToGlobal && newPersons.length > 0) {
+      setPersons((prev) => [...newPersons, ...prev]);
+    }
+
+    if (effectiveUserId) {
+      setIsSyncing(true);
+      Promise.all([
+        updatedEventToSave ? saveEventToFirestore(effectiveUserId, updatedEventToSave) : Promise.resolve(),
+        ...(saveToGlobal ? newPersons.map((p) => savePersonToFirestore(effectiveUserId, p)) : []),
+      ])
+        .catch(console.error)
+        .finally(() => setIsSyncing(false));
+    }
+  };
+
   // Add Existing Persons to Event
   const addExistingPersonsToEvent = (eventId: string, selectedPersons: Person[]) => {
     let updatedEventToSave: EventItem | null = null;
@@ -776,6 +842,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateAttendeeStatus,
         markAllAttendees,
         addAttendeeToEvent,
+        addMultipleAttendeesToEvent,
         addExistingPersonsToEvent,
         removeAttendeeFromEvent,
         editAttendeeInEvent,

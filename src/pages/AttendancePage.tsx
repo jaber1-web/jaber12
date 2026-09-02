@@ -44,6 +44,7 @@ export const AttendancePage: React.FC = () => {
     updateAttendeeStatus,
     markAllAttendees,
     addAttendeeToEvent,
+    addMultipleAttendeesToEvent,
     addExistingPersonsToEvent,
     removeAttendeeFromEvent,
     editAttendeeInEvent,
@@ -714,6 +715,9 @@ export const AttendancePage: React.FC = () => {
           availablePersons={persons}
           onAddNewPerson={(name, email, phone, stcNumber) =>
             addAttendeeToEvent(event.id, { name, email, phone, stcNumber }, true)
+          }
+          onAddMultiplePersons={multipleAttendees =>
+            addMultipleAttendeesToEvent(event.id, multipleAttendees, true)
           }
           onAddExistingPersons={selectedPersons => {
             addExistingPersonsToEvent(event.id, selectedPersons);

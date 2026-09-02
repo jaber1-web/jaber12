@@ -69,10 +69,6 @@ export const DirectoryPage: React.FC = () => {
       setFormError('يرجى إدخال اسم الشخص');
       return;
     }
-    if (!phone.trim() && !stcNumber.trim()) {
-      setFormError('يرجى إدخال رقم الجوال أو رقم جوال STC');
-      return;
-    }
 
     addPerson({
       name: name.trim(),
@@ -571,7 +567,7 @@ export const DirectoryPage: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">رقم الجوال *</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">رقم الجوال (اختياري)</label>
                   <input
                     type="tel"
                     value={phone}
@@ -582,10 +578,9 @@ export const DirectoryPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">رقم جوال STC *</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">رقم جوال STC (اختياري)</label>
                   <input
                     type="tel"
-                    required
                     value={stcNumber}
                     onChange={e => setStcNumber(e.target.value)}
                     placeholder="05xxxxxxxx"

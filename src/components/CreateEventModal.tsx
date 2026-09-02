@@ -186,7 +186,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           </div>
 
           {/* Pre-fill attendees from database */}
-          {(availablePersons || []).length > 0 && (
+          {personList.length > 0 && (
             <div className="pt-2 border-t border-gray-100">
               <label className="flex items-center gap-2 cursor-pointer mb-2.5">
                 <input
@@ -196,13 +196,13 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   onChange={e => {
                     setIncludeExisting(e.target.checked);
                     if (e.target.checked && selectedPersonIds.length === 0) {
-                      setSelectedPersonIds((availablePersons || []).map(p => p.id));
+                      setSelectedPersonIds(personList.map(p => p.id));
                     }
                   }}
                   className="w-4 h-4 rounded-sm text-blue-600 focus:ring-blue-500 border-gray-300"
                 />
                 <span className="text-xs font-bold text-gray-800">
-                  إضافة مشاركين مسجلين مسبقاً ({(availablePersons || []).length} أشخاص في الدليل)
+                  إضافة مشاركين مسجلين مسبقاً ({personList.length} أشخاص في الدليل)
                 </span>
               </label>
 
@@ -260,7 +260,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                     })}
                   </div>
                   <div className="text-[11px] text-gray-500 text-left">
-                    تم تحديد {selectedPersonIds.length} من {(availablePersons || []).length}
+                    تم تحديد {selectedPersonIds.length} من {personList.length}
                   </div>
                 </div>
               )}
