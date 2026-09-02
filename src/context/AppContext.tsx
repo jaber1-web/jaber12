@@ -1,17 +1,30 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { EventItem, Person, AttendanceStatus, EventAttendee, AppSettings } from '../types';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
+import { User, onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
+import { auth } from '../firebase';
+import {
+  EventItem,
+  Person,
+  EventAttendee,
+  AttendanceStatus,
+  AppSettings,
+} from '../types';
 import {
   DEFAULT_SETTINGS,
-  playAttendanceFeedback,
+  getStoredEvents,
+  saveEvents,
+  getStoredPersons,
+  savePersons,
+  getStoredSettings,
+  saveSettings,
   FullBackupPayload,
+  playAttendanceFeedback,
 } from '../utils/storage';
-import {
-  auth,
-  signInAnonymously,
-  onAuthStateChanged,
-  signOut,
-  User,
-} from '../firebase';
 import {
   subscribeToEvents,
   subscribeToPersons,
@@ -27,21 +40,25 @@ import {
 } from '../services/firestoreService';
 
 interface AppContextType {
+  // User & Auth State
   user: User | null;
   effectiveUserId: string;
   isAuthLoading: boolean;
   isDataLoading: boolean;
   isSyncing: boolean;
+
+  // Data State
   events: EventItem[];
   persons: Person[];
   settings: AppSettings;
-  updateSettings: (newSettings: Partial<AppSettings>) => void;
+  updateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
 
   // Event Actions
   createEvent: (eventData: {
     title: string;
     date: string;
     location: string;
+    notes?: string;
     selectedPersonIds: string[];
     customAttendees: Array<{ name: string; email?: string; phone?: string; stcNumber?: string }>;
   }) => EventItem;
@@ -49,7 +66,7 @@ interface AppContextType {
   deleteEvent: (eventId: string) => void;
   getEventById: (eventId: string) => EventItem | undefined;
 
-  // Attendance Actions
+  // Attendee Actions
   updateAttendeeStatus: (eventId: string, personId: string, status: AttendanceStatus) => void;
   markAllAttendees: (eventId: string, status: AttendanceStatus) => void;
   addAttendeeToEvent: (
@@ -66,13 +83,13 @@ interface AppContextType {
   removeAttendeeFromEvent: (eventId: string, personId: string) => void;
   editAttendeeInEvent: (eventId: string, updatedAttendee: EventAttendee, updateGlobal: boolean) => void;
 
-  // Person Actions
-  addPerson: (personData: Omit<Person, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  // Directory / Person Actions
+  addPerson: (person: Omit<Person, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updatePerson: (person: Person) => void;
   deletePerson: (personId: string) => void;
-  importPersons: (newPersons: Omit<Person, 'id' | 'createdAt' | 'updatedAt'>[]) => void;
+  importPersons: (persons: Omit<Person, 'id' | 'createdAt' | 'updatedAt'>[]) => void;
 
-  // Data Management
+  // Backup & Restore
   exportAllBackupData: () => FullBackupPayload;
   importBackupData: (payload: FullBackupPayload) => Promise<{ success: boolean; message: string }>;
   resetToDefaultData: () => Promise<void>;
@@ -98,31 +115,17 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Helper to get or create a persistent client workspace ID for fallback
-const getFallbackWorkspaceId = () => {
-  try {
-    let id = localStorage.getItem('app_workspace_uid');
-    if (!id) {
-      id = `client_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      localStorage.setItem('app_workspace_uid', id);
-    }
-    return id;
-  } catch {
-    return 'client_default_workspace';
-  }
-};
-
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [fallbackUid] = useState<string>(getFallbackWorkspaceId);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  const [events, setEvents] = useState<EventItem[]>([]);
-  const [persons, setPersons] = useState<Person[]>([]);
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  // Initialize with local cache for instant UI rendering
+  const [events, setEvents] = useState<EventItem[]>(() => getStoredEvents());
+  const [persons, setPersons] = useState<Person[]>(() => getStoredPersons());
+  const [settings, setSettings] = useState<AppSettings>(() => getStoredSettings());
 
   // Modals state
   const [reportModalEvent, setReportModalEvent] = useState<EventItem | null>(null);
@@ -131,9 +134,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isEditEventOpen, setIsEditEventOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
 
-  const effectiveUserId = user ? user.uid : fallbackUid;
+  const effectiveUserId = user ? user.uid : 'default_user';
 
-  // 1. Listen for Firebase Auth state changes & attempt silent anonymous sign-in
+  // 1. Silent Auth setup
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
@@ -143,15 +146,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setUser(null);
         setIsAuthLoading(false);
         try {
-          // Attempt silent anonymous auth if available on Firebase project
           const cred = await signInAnonymously(auth);
           setUser(cred.user);
         } catch (err: any) {
-          // Admin-restricted-operation is expected if anonymous auth is not enabled in Firebase Console.
-          // In that case, we fallback to the persistent client workspace UID smoothly.
-          if (err?.code !== 'auth/admin-restricted-operation') {
-            console.debug('Firebase auth notice:', err?.message || err);
-          }
+          // Normal fallback if anonymous auth not enabled
         }
       }
     });
@@ -159,56 +157,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => unsubscribeAuth();
   }, []);
 
-  // 2. Real-time Firestore Subscriptions
+  // 2. Real-time Firestore Subscriptions & Initial Sync
   useEffect(() => {
-    if (!effectiveUserId) return;
+    // Initial check to upload any locally created data to Firestore
+    checkAndMigrateLocalStorageToFirestore().catch(() => {});
 
-    setIsDataLoading(true);
-
-    // Migrate local data to Firestore if this user's cloud DB is new
-    checkAndMigrateLocalStorageToFirestore(effectiveUserId).catch(() => {});
-
-    let loadedCount = 0;
-    const checkLoaded = () => {
-      loadedCount++;
-      if (loadedCount >= 3) {
-        setIsDataLoading(false);
-      }
-    };
-
-    const unsubEvents = subscribeToEvents(
-      effectiveUserId,
-      (firestoreEvents) => {
+    const unsubEvents = subscribeToEvents((firestoreEvents) => {
+      if (firestoreEvents.length > 0) {
         setEvents(firestoreEvents);
-        checkLoaded();
-      },
-      () => checkLoaded()
-    );
+        saveEvents(firestoreEvents);
+      } else {
+        // If Firestore is empty, check if we have local events and upload them
+        const local = getStoredEvents();
+        if (local.length > 0) {
+          local.forEach((e) => saveEventToFirestore(e).catch(() => {}));
+        }
+      }
+    });
 
-    const unsubPersons = subscribeToPersons(
-      effectiveUserId,
-      (firestorePersons) => {
+    const unsubPersons = subscribeToPersons((firestorePersons) => {
+      if (firestorePersons.length > 0) {
         setPersons(firestorePersons);
-        checkLoaded();
-      },
-      () => checkLoaded()
-    );
+        savePersons(firestorePersons);
+      } else {
+        const local = getStoredPersons();
+        if (local.length > 0) {
+          local.forEach((p) => savePersonToFirestore(p).catch(() => {}));
+        }
+      }
+    });
 
-    const unsubSettings = subscribeToSettings(
-      effectiveUserId,
-      (firestoreSettings) => {
-        setSettings(firestoreSettings);
-        checkLoaded();
-      },
-      () => checkLoaded()
-    );
+    const unsubSettings = subscribeToSettings((firestoreSettings) => {
+      setSettings(firestoreSettings);
+      saveSettings(firestoreSettings);
+    });
 
     return () => {
       unsubEvents();
       unsubPersons();
       unsubSettings();
     };
-  }, [effectiveUserId]);
+  }, []);
 
   // Apply dark mode & theme preferences to root element
   useEffect(() => {
@@ -229,22 +218,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Update Settings in Firestore
+  // Update Settings
   const updateSettings = async (newSettings: Partial<AppSettings>) => {
     const updated = {
       ...settings,
       ...newSettings,
     };
     setSettings(updated);
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      try {
-        await saveSettingsToFirestore(effectiveUserId, updated);
-      } catch (err) {
-        console.error('Error saving settings to Firestore:', err);
-      } finally {
-        setIsSyncing(false);
-      }
+    saveSettings(updated);
+
+    setIsSyncing(true);
+    try {
+      await saveSettingsToFirestore(updated);
+    } catch (err) {
+      console.error('Error saving settings to Firestore:', err);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -257,21 +246,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     title: string;
     date: string;
     location: string;
+    notes?: string;
     selectedPersonIds: string[];
     customAttendees: Array<{ name: string; email?: string; phone?: string; stcNumber?: string }>;
   }): EventItem => {
     const attendeesList: EventAttendee[] = [];
 
     // From global directory
-    eventData.selectedPersonIds.forEach((pId) => {
+    (eventData.selectedPersonIds || []).forEach((pId) => {
       const p = persons.find((item) => item.id === pId);
       if (p) {
         attendeesList.push({
           personId: p.id,
           name: p.name,
-          email: p.email,
-          phone: p.phone,
-          stcNumber: p.stcNumber,
+          email: p.email || '',
+          phone: p.phone || '',
+          stcNumber: p.stcNumber || '',
           status: 'pending',
         });
       }
@@ -279,7 +269,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Custom attendees
     const newPersonsToAdd: Person[] = [];
-    eventData.customAttendees.forEach((ca, idx) => {
+    (eventData.customAttendees || []).forEach((ca, idx) => {
       const newPersonId = `p-${Date.now()}-${idx}`;
       attendeesList.push({
         personId: newPersonId,
@@ -307,27 +297,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       title: eventData.title,
       date: eventData.date,
       location: eventData.location,
+      notes: eventData.notes,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       attendees: attendeesList,
     };
 
-    // Optimistic UI updates
-    if (newPersonsToAdd.length > 0) {
-      setPersons((prev) => [...newPersonsToAdd, ...prev]);
-    }
-    setEvents((prev) => [newEvent, ...prev]);
+    // Immediate state & local storage update
+    const updatedEvents = [newEvent, ...events];
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
 
-    // Save to Firestore
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      Promise.all([
-        saveEventToFirestore(effectiveUserId, newEvent),
-        ...newPersonsToAdd.map((p) => savePersonToFirestore(effectiveUserId, p)),
-      ])
-        .catch((err) => console.error('Error creating event in Firestore:', err))
-        .finally(() => setIsSyncing(false));
+    if (newPersonsToAdd.length > 0) {
+      const updatedPersons = [...newPersonsToAdd, ...persons];
+      setPersons(updatedPersons);
+      savePersons(updatedPersons);
     }
+
+    // Immediate Firestore cloud sync
+    setIsSyncing(true);
+    Promise.all([
+      saveEventToFirestore(newEvent),
+      ...newPersonsToAdd.map((p) => savePersonToFirestore(p)),
+    ])
+      .catch((err) => console.error('Error creating event in Firestore:', err))
+      .finally(() => setIsSyncing(false));
 
     return newEvent;
   };
@@ -335,21 +329,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Update Event
   const updateEvent = (updatedEvent: EventItem) => {
     const finalEvent = { ...updatedEvent, updatedAt: new Date().toISOString() };
-    setEvents((prev) =>
-      prev.map((evt) => (evt.id === finalEvent.id ? finalEvent : evt))
-    );
+    const updatedEvents = events.map((evt) => (evt.id === finalEvent.id ? finalEvent : evt));
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
 
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      saveEventToFirestore(effectiveUserId, finalEvent)
-        .catch((err) => console.error('Error updating event in Firestore:', err))
-        .finally(() => setIsSyncing(false));
-    }
+    setIsSyncing(true);
+    saveEventToFirestore(finalEvent)
+      .catch((err) => console.error('Error updating event in Firestore:', err))
+      .finally(() => setIsSyncing(false));
   };
 
   // Delete Event
   const deleteEvent = (eventId: string) => {
-    setEvents((prev) => prev.filter((evt) => evt.id !== eventId));
+    const updatedEvents = events.filter((evt) => evt.id !== eventId);
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+
     if (reportModalEvent?.id === eventId) {
       setReportModalEvent(null);
     }
@@ -357,12 +352,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setPdfModalEvent(null);
     }
 
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      deleteEventFromFirestore(effectiveUserId, eventId)
-        .catch((err) => console.error('Error deleting event from Firestore:', err))
-        .finally(() => setIsSyncing(false));
-    }
+    setIsSyncing(true);
+    deleteEventFromFirestore(eventId)
+      .catch((err) => console.error('Error deleting event from Firestore:', err))
+      .finally(() => setIsSyncing(false));
   };
 
   // Update Attendee Status
@@ -372,29 +365,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const updated = {
+        ...evt,
+        updatedAt: new Date().toISOString(),
+        attendees: (evt.attendees || []).map((att) => {
+          if (att.personId !== personId) return att;
+          return {
+            ...att,
+            status,
+            markedAt: status !== 'pending' ? new Date().toISOString() : undefined,
+          };
+        }),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
 
-    setEvents((prevEvents) =>
-      prevEvents.map((evt) => {
-        if (evt.id !== eventId) return evt;
-        const updated = {
-          ...evt,
-          updatedAt: new Date().toISOString(),
-          attendees: (evt.attendees || []).map((att) => {
-            if (att.personId !== personId) return att;
-            return {
-              ...att,
-              status,
-              markedAt: status !== 'pending' ? new Date().toISOString() : undefined,
-            };
-          }),
-        };
-        updatedEventToSave = updated;
-        return updated;
-      })
-    );
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
 
-    if (effectiveUserId && updatedEventToSave) {
-      saveEventToFirestore(effectiveUserId, updatedEventToSave).catch((err) =>
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch((err) =>
         console.error('Error updating attendee status in Firestore:', err)
       );
     }
@@ -407,26 +400,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const updated = {
+        ...evt,
+        updatedAt: new Date().toISOString(),
+        attendees: (evt.attendees || []).map((att) => ({
+          ...att,
+          status,
+          markedAt: status !== 'pending' ? new Date().toISOString() : undefined,
+        })),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
 
-    setEvents((prevEvents) =>
-      prevEvents.map((evt) => {
-        if (evt.id !== eventId) return evt;
-        const updated = {
-          ...evt,
-          updatedAt: new Date().toISOString(),
-          attendees: (evt.attendees || []).map((att) => ({
-            ...att,
-            status,
-            markedAt: status !== 'pending' ? new Date().toISOString() : undefined,
-          })),
-        };
-        updatedEventToSave = updated;
-        return updated;
-      })
-    );
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
 
-    if (effectiveUserId && updatedEventToSave) {
-      saveEventToFirestore(effectiveUserId, updatedEventToSave).catch((err) =>
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch((err) =>
         console.error('Error marking all attendees in Firestore:', err)
       );
     }
@@ -449,45 +442,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const updated = {
+        ...evt,
+        updatedAt: new Date().toISOString(),
+        attendees: [newAttendee, ...(evt.attendees || [])],
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
 
-    setEvents((prev) =>
-      prev.map((evt) => {
-        if (evt.id !== eventId) return evt;
-        const updated = {
-          ...evt,
-          updatedAt: new Date().toISOString(),
-          attendees: [newAttendee, ...(evt.attendees || [])],
-        };
-        updatedEventToSave = updated;
-        return updated;
-      })
-    );
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
 
-    const newPerson: Person = {
-      id: newPersonId,
-      name: attendeeData.name,
-      email: attendeeData.email || '',
-      phone: attendeeData.phone || '',
-      stcNumber: attendeeData.stcNumber || '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
+    let newPerson: Person | null = null;
     if (saveToGlobal) {
-      setPersons((prev) => [newPerson, ...prev]);
+      newPerson = {
+        id: newPersonId,
+        name: attendeeData.name,
+        email: attendeeData.email || '',
+        phone: attendeeData.phone || '',
+        stcNumber: attendeeData.stcNumber || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const updatedPersons = [newPerson, ...persons];
+      setPersons(updatedPersons);
+      savePersons(updatedPersons);
     }
 
-    if (effectiveUserId) {
-      if (updatedEventToSave) {
-        saveEventToFirestore(effectiveUserId, updatedEventToSave).catch(console.error);
-      }
-      if (saveToGlobal) {
-        savePersonToFirestore(effectiveUserId, newPerson).catch(console.error);
-      }
-    }
+    setIsSyncing(true);
+    Promise.all([
+      updatedEventToSave ? saveEventToFirestore(updatedEventToSave) : Promise.resolve(),
+      newPerson ? savePersonToFirestore(newPerson) : Promise.resolve(),
+    ])
+      .catch((err) => console.error('Error adding attendee in Firestore:', err))
+      .finally(() => setIsSyncing(false));
   };
 
-  // Add Multiple Attendees to Event (e.g. from Excel or Bulk Text)
+  // Add Multiple Attendees to Event
   const addMultipleAttendeesToEvent = (
     eventId: string,
     attendeesData: Array<{ name: string; email?: string; phone?: string; stcNumber?: string }>,
@@ -520,87 +514,88 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     let updatedEventToSave: EventItem | null = null;
-    setEvents((prev) =>
-      prev.map((evt) => {
-        if (evt.id !== eventId) return evt;
-        const updated = {
-          ...evt,
-          updatedAt: new Date().toISOString(),
-          attendees: [...newAttendees, ...(evt.attendees || [])],
-        };
-        updatedEventToSave = updated;
-        return updated;
-      })
-    );
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const updated = {
+        ...evt,
+        updatedAt: new Date().toISOString(),
+        attendees: [...newAttendees, ...(evt.attendees || [])],
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
+
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
 
     if (saveToGlobal && newPersons.length > 0) {
-      setPersons((prev) => [...newPersons, ...prev]);
+      const updatedPersons = [...newPersons, ...persons];
+      setPersons(updatedPersons);
+      savePersons(updatedPersons);
     }
 
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      Promise.all([
-        updatedEventToSave ? saveEventToFirestore(effectiveUserId, updatedEventToSave) : Promise.resolve(),
-        ...(saveToGlobal ? newPersons.map((p) => savePersonToFirestore(effectiveUserId, p)) : []),
-      ])
-        .catch(console.error)
-        .finally(() => setIsSyncing(false));
-    }
+    setIsSyncing(true);
+    Promise.all([
+      updatedEventToSave ? saveEventToFirestore(updatedEventToSave) : Promise.resolve(),
+      ...(saveToGlobal ? newPersons.map((p) => savePersonToFirestore(p)) : []),
+    ])
+      .catch(console.error)
+      .finally(() => setIsSyncing(false));
   };
 
   // Add Existing Persons to Event
   const addExistingPersonsToEvent = (eventId: string, selectedPersons: Person[]) => {
     let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const existingIds = new Set((evt.attendees || []).map((a) => a.personId));
+      const newAttendees: EventAttendee[] = selectedPersons
+        .filter((p) => !existingIds.has(p.id))
+        .map((p) => ({
+          personId: p.id,
+          name: p.name,
+          email: p.email || '',
+          phone: p.phone || '',
+          stcNumber: p.stcNumber || '',
+          status: 'pending',
+        }));
 
-    setEvents((prev) =>
-      prev.map((evt) => {
-        if (evt.id !== eventId) return evt;
-        const existingIds = new Set((evt.attendees || []).map((a) => a.personId));
-        const newAttendees: EventAttendee[] = selectedPersons
-          .filter((p) => !existingIds.has(p.id))
-          .map((p) => ({
-            personId: p.id,
-            name: p.name,
-            email: p.email,
-            phone: p.phone,
-            stcNumber: p.stcNumber,
-            status: 'pending',
-          }));
+      const updated = {
+        ...evt,
+        updatedAt: new Date().toISOString(),
+        attendees: [...(evt.attendees || []), ...newAttendees],
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
 
-        const updated = {
-          ...evt,
-          updatedAt: new Date().toISOString(),
-          attendees: [...(evt.attendees || []), ...newAttendees],
-        };
-        updatedEventToSave = updated;
-        return updated;
-      })
-    );
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
 
-    if (effectiveUserId && updatedEventToSave) {
-      saveEventToFirestore(effectiveUserId, updatedEventToSave).catch(console.error);
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch(console.error);
     }
   };
 
   // Remove Attendee from Event
   const removeAttendeeFromEvent = (eventId: string, personId: string) => {
     let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const updated = {
+        ...evt,
+        updatedAt: new Date().toISOString(),
+        attendees: (evt.attendees || []).filter((a) => a.personId !== personId),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
 
-    setEvents((prev) =>
-      prev.map((evt) => {
-        if (evt.id !== eventId) return evt;
-        const updated = {
-          ...evt,
-          updatedAt: new Date().toISOString(),
-          attendees: (evt.attendees || []).filter((a) => a.personId !== personId),
-        };
-        updatedEventToSave = updated;
-        return updated;
-      })
-    );
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
 
-    if (effectiveUserId && updatedEventToSave) {
-      saveEventToFirestore(effectiveUserId, updatedEventToSave).catch(console.error);
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch(console.error);
     }
   };
 
@@ -611,50 +606,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     updateGlobal: boolean
   ) => {
     let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const updated = {
+        ...evt,
+        updatedAt: new Date().toISOString(),
+        attendees: (evt.attendees || []).map((a) =>
+          a.personId === updatedAttendee.personId ? updatedAttendee : a
+        ),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
 
-    setEvents((prev) =>
-      prev.map((evt) => {
-        if (evt.id !== eventId) return evt;
-        const updated = {
-          ...evt,
-          updatedAt: new Date().toISOString(),
-          attendees: (evt.attendees || []).map((a) =>
-            a.personId === updatedAttendee.personId ? updatedAttendee : a
-          ),
-        };
-        updatedEventToSave = updated;
-        return updated;
-      })
-    );
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
 
     let updatedPersonToSave: Person | null = null;
     if (updateGlobal) {
-      setPersons((prev) =>
-        prev.map((p) => {
-          if (p.id === updatedAttendee.personId) {
-            const updatedP: Person = {
-              ...p,
-              name: updatedAttendee.name,
-              email: updatedAttendee.email,
-              phone: updatedAttendee.phone,
-              stcNumber: updatedAttendee.stcNumber,
-              updatedAt: new Date().toISOString(),
-            };
-            updatedPersonToSave = updatedP;
-            return updatedP;
-          }
-          return p;
-        })
-      );
+      const updatedPersons = persons.map((p) => {
+        if (p.id === updatedAttendee.personId) {
+          const updatedP: Person = {
+            ...p,
+            name: updatedAttendee.name,
+            email: updatedAttendee.email || '',
+            phone: updatedAttendee.phone || '',
+            stcNumber: updatedAttendee.stcNumber || '',
+            updatedAt: new Date().toISOString(),
+          };
+          updatedPersonToSave = updatedP;
+          return updatedP;
+        }
+        return p;
+      });
+      setPersons(updatedPersons);
+      savePersons(updatedPersons);
     }
 
-    if (effectiveUserId) {
-      if (updatedEventToSave) {
-        saveEventToFirestore(effectiveUserId, updatedEventToSave).catch(console.error);
-      }
-      if (updateGlobal && updatedPersonToSave) {
-        savePersonToFirestore(effectiveUserId, updatedPersonToSave).catch(console.error);
-      }
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch(console.error);
+    }
+    if (updateGlobal && updatedPersonToSave) {
+      savePersonToFirestore(updatedPersonToSave).catch(console.error);
     }
   };
 
@@ -666,72 +659,71 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    setPersons((prev) => [newPerson, ...prev]);
+    const updatedPersons = [newPerson, ...persons];
+    setPersons(updatedPersons);
+    savePersons(updatedPersons);
 
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      savePersonToFirestore(effectiveUserId, newPerson)
-        .catch(console.error)
-        .finally(() => setIsSyncing(false));
-    }
+    setIsSyncing(true);
+    savePersonToFirestore(newPerson)
+      .catch(console.error)
+      .finally(() => setIsSyncing(false));
   };
 
   // Update Person in Directory
   const updatePerson = (updatedPerson: Person) => {
     const finalPerson = { ...updatedPerson, updatedAt: new Date().toISOString() };
-    setPersons((prev) =>
-      prev.map((p) => (p.id === finalPerson.id ? finalPerson : p))
-    );
+    const updatedPersons = persons.map((p) => (p.id === finalPerson.id ? finalPerson : p));
+    setPersons(updatedPersons);
+    savePersons(updatedPersons);
 
     // Also update existing event attendees with this personId
     const eventsToUpdate: EventItem[] = [];
-    setEvents((prev) =>
-      prev.map((evt) => {
-        let hasChanges = false;
-        const updatedAttendees = (evt.attendees || []).map((att) => {
-          if (att.personId === finalPerson.id) {
-            hasChanges = true;
-            return {
-              ...att,
-              name: finalPerson.name,
-              email: finalPerson.email,
-              phone: finalPerson.phone,
-              stcNumber: finalPerson.stcNumber,
-            };
-          }
-          return att;
-        });
-
-        if (hasChanges) {
-          const updatedEvt = { ...evt, attendees: updatedAttendees, updatedAt: new Date().toISOString() };
-          eventsToUpdate.push(updatedEvt);
-          return updatedEvt;
+    const updatedEvents = events.map((evt) => {
+      let hasChanges = false;
+      const updatedAttendees = (evt.attendees || []).map((att) => {
+        if (att.personId === finalPerson.id) {
+          hasChanges = true;
+          return {
+            ...att,
+            name: finalPerson.name,
+            email: finalPerson.email,
+            phone: finalPerson.phone,
+            stcNumber: finalPerson.stcNumber,
+          };
         }
-        return evt;
-      })
-    );
+        return att;
+      });
 
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      Promise.all([
-        savePersonToFirestore(effectiveUserId, finalPerson),
-        ...eventsToUpdate.map((e) => saveEventToFirestore(effectiveUserId, e)),
-      ])
-        .catch(console.error)
-        .finally(() => setIsSyncing(false));
-    }
+      if (hasChanges) {
+        const updatedEvt = { ...evt, attendees: updatedAttendees, updatedAt: new Date().toISOString() };
+        eventsToUpdate.push(updatedEvt);
+        return updatedEvt;
+      }
+      return evt;
+    });
+
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+
+    setIsSyncing(true);
+    Promise.all([
+      savePersonToFirestore(finalPerson),
+      ...eventsToUpdate.map((e) => saveEventToFirestore(e)),
+    ])
+      .catch(console.error)
+      .finally(() => setIsSyncing(false));
   };
 
   // Delete Person from Directory
   const deletePerson = (personId: string) => {
-    setPersons((prev) => prev.filter((p) => p.id !== personId));
+    const updatedPersons = persons.filter((p) => p.id !== personId);
+    setPersons(updatedPersons);
+    savePersons(updatedPersons);
 
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      deletePersonFromFirestore(effectiveUserId, personId)
-        .catch(console.error)
-        .finally(() => setIsSyncing(false));
-    }
+    setIsSyncing(true);
+    deletePersonFromFirestore(personId)
+      .catch(console.error)
+      .finally(() => setIsSyncing(false));
   };
 
   // Import Persons
@@ -742,14 +734,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }));
-    setPersons((prev) => [...formatted, ...prev]);
+    const updatedPersons = [...formatted, ...persons];
+    setPersons(updatedPersons);
+    savePersons(updatedPersons);
 
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      Promise.all(formatted.map((p) => savePersonToFirestore(effectiveUserId, p)))
-        .catch(console.error)
-        .finally(() => setIsSyncing(false));
-    }
+    setIsSyncing(true);
+    Promise.all(formatted.map((p) => savePersonToFirestore(p)))
+      .catch(console.error)
+      .finally(() => setIsSyncing(false));
   };
 
   // Export Full Backup Payload
@@ -771,20 +763,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       setEvents(payload.events);
+      saveEvents(payload.events);
       setPersons(payload.persons);
+      savePersons(payload.persons);
       if (payload.settings) {
         setSettings(payload.settings);
+        saveSettings(payload.settings);
       }
 
-      if (effectiveUserId) {
-        setIsSyncing(true);
-        await batchImportAllToFirestore(effectiveUserId, {
-          events: payload.events,
-          persons: payload.persons,
-          settings: payload.settings,
-        });
-        setIsSyncing(false);
-      }
+      setIsSyncing(true);
+      await batchImportAllToFirestore({
+        events: payload.events,
+        persons: payload.persons,
+        settings: payload.settings,
+      });
+      setIsSyncing(false);
 
       return {
         success: true,
@@ -800,27 +793,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Reset to default data
   const resetToDefaultData = async () => {
     setEvents([]);
+    saveEvents([]);
     setPersons([]);
+    savePersons([]);
     setSettings(DEFAULT_SETTINGS);
+    saveSettings(DEFAULT_SETTINGS);
 
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      await clearAllUserDataFromFirestore(effectiveUserId);
-      setIsSyncing(false);
-    }
+    setIsSyncing(true);
+    await clearAllUserDataFromFirestore();
+    setIsSyncing(false);
   };
 
   // Clear all data
   const clearAllData = async () => {
     setEvents([]);
+    saveEvents([]);
     setPersons([]);
+    savePersons([]);
     setSettings(DEFAULT_SETTINGS);
+    saveSettings(DEFAULT_SETTINGS);
 
-    if (effectiveUserId) {
-      setIsSyncing(true);
-      await clearAllUserDataFromFirestore(effectiveUserId);
-      setIsSyncing(false);
-    }
+    setIsSyncing(true);
+    await clearAllUserDataFromFirestore();
+    setIsSyncing(false);
   };
 
   return (
