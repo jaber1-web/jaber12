@@ -1,0 +1,6 @@
+{
+  "name": "نظام إدارة حضور الفعاليات",
+  "description": "منصة سريعة وسهلة الاستخدام لإدارة حضور الأشخاص في الفعاليات والإيفنتات وحفظ قاعدة بيانات المشاركين وتصدير التقارير للمسؤول.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

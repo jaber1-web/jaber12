@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User profile and top-level user entity",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid"]
+    },
+    "events": {
+      "title": "Event",
+      "description": "Event with its attendees and attendance status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "location": { "type": "string" },
+        "notes": { "type": "string" },
+        "attendees": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "date", "attendees"]
+    },
+    "persons": {
+      "title": "Person",
+      "description": "Person directory item for quick reuse across events",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "stcNumber": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "settings": {
+      "title": "AppSettings",
+      "description": "User branding, print settings, and UI preferences",
+      "type": "object",
+      "properties": {
+        "orgName": { "type": "string" },
+        "orgSubtitle": { "type": "string" },
+        "logoType": { "type": "string" },
+        "customLogoUrl": { "type": "string" },
+        "presetIcon": { "type": "string" },
+        "authorizedSigner": { "type": "string" },
+        "showLogoInReports": { "type": "boolean" },
+        "themeColor": { "type": "string" },
+        "mode": { "type": "string" },
+        "fontSize": { "type": "string" },
+        "printHeaderTitle": { "type": "string" },
+        "printFooterNote": { "type": "string" },
+        "includeStcInPrint": { "type": "boolean" },
+        "includeEmailInPrint": { "type": "boolean" },
+        "includeSignaturesInPrint": { "type": "boolean" },
+        "includeStatsInPrint": { "type": "boolean" },
+        "soundEnabled": { "type": "boolean" },
+        "confettiEnabled": { "type": "boolean" }
+      }
+    }
+  },
+  "firestore": {
+    "users/{userId}": { "entity": "users" },
+    "users/{userId}/events/{eventId}": { "entity": "events" },
+    "users/{userId}/persons/{personId}": { "entity": "persons" },
+    "users/{userId}/settings/{docId}": { "entity": "settings" }
+  }
+}
