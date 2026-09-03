@@ -62,6 +62,15 @@ export function generateTextReport(event: EventItem, settings: AppSettings = DEF
   if (stats.pending > 0) {
     text += `• معلق: ${stats.pending}\n`;
   }
+
+  if (event?.rounds && event.rounds.length > 0) {
+    text += `\n⏱️ *جولات التفقد الدوري (${event.rounds.length}):*\n`;
+    event.rounds.forEach((r) => {
+      const pCount = Object.values(r.records || {}).filter((s) => s === 'present').length;
+      text += `• ${r.name}: ${pCount} حاضر\n`;
+    });
+  }
+
   text += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
   text += `👥 *قائمة الحضور:*\n\n`;
 
@@ -91,7 +100,17 @@ export function shareViaWhatsApp(event: EventItem, settings: AppSettings = DEFAU
   const text = generateTextReport(event, settings);
   const encoded = encodeURIComponent(text);
   const url = `https://api.whatsapp.com/send?text=${encoded}`;
-  window.open(url, '_blank');
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch {
+    window.open(url, '_blank');
+  }
 }
 
 export function shareViaEmail(event: EventItem, settings: AppSettings = DEFAULT_SETTINGS) {
@@ -128,6 +147,20 @@ export function exportToExcel(event: EventItem, settings: AppSettings = DEFAULT_
     }
     if (settings.includeEmailInPrint) {
       row['البريد الإلكتروني'] = a.email || '-';
+    }
+
+    // Include all checkpoints / rounds if present
+    if (event?.rounds && event.rounds.length > 0) {
+      event.rounds.forEach((round) => {
+        const rStatus = round.records ? round.records[a.personId] : undefined;
+        row[round.name] = rStatus === 'present' ? 'حاضر ✅' : rStatus === 'absent' ? 'غائب ❌' : 'معلق ⏳';
+      });
+
+      const presentInRounds = event.rounds.filter(
+        (r) => r.records && r.records[a.personId] === 'present'
+      ).length;
+      const rate = Math.round((presentInRounds / event.rounds.length) * 100);
+      row['نسبة استمرار التواجد'] = `${rate}% (${presentInRounds}/${event.rounds.length})`;
     }
 
     row['وقت التسجيل'] = a.markedAt ? new Date(a.markedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : '-';

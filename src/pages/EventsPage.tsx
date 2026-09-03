@@ -16,11 +16,13 @@ import {
 import { useApp } from '../context/AppContext';
 import { getAttendanceStats } from '../utils/exportUtils';
 import { motion } from 'motion/react';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export const EventsPage: React.FC = () => {
   const navigate = useNavigate();
   const {
     events,
+    settings,
     setIsCreateEventOpen,
     setReportModalEvent,
     setPdfModalEvent,
@@ -29,8 +31,8 @@ export const EventsPage: React.FC = () => {
     setIsEditEventOpen,
   } = useApp();
 
-
   const [searchQuery, setSearchQuery] = useState('');
+  const [eventToDelete, setEventToDelete] = useState<{ id: string; title: string } | null>(null);
   const today = new Date().toISOString().split('T')[0];
 
   const overallStats = useMemo(() => {
@@ -76,8 +78,14 @@ export const EventsPage: React.FC = () => {
       <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
+              <span className="text-xs font-bold text-blue-600 dark:text-blue-400 tracking-wide">
+                {settings.orgName || 'نظام إدارة الحضور والفعاليات'}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl sm:text-2xl font-bold text-[#1A1A1A]">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
                 قائمة الفعاليات
               </h2>
               <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md font-bold border border-blue-100 font-mono">
@@ -229,11 +237,7 @@ export const EventsPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            if (confirm(`هل أنت متأكد من حذف فعالية "${event.title}"؟`)) {
-                              deleteEvent(event.id);
-                            }
-                          }}
+                          onClick={() => setEventToDelete({ id: event.id, title: event.title })}
                           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="حذف الفعالية"
                         >
@@ -326,6 +330,24 @@ export const EventsPage: React.FC = () => {
           })}
         </div>
       )}
+
+      {/* Confirm Delete Event Modal */}
+      <ConfirmModal
+        isOpen={Boolean(eventToDelete)}
+        onClose={() => setEventToDelete(null)}
+        onConfirm={() => {
+          if (eventToDelete) {
+            deleteEvent(eventToDelete.id);
+            setEventToDelete(null);
+          }
+        }}
+        title="حذف الفعالية"
+        message={`هل أنت متأكد من حذف فعالية "${eventToDelete?.title}" نهائياً؟ سيتم حذف جميع سجلات الحضور المرتبطة بها.`}
+        confirmText="نعم، حذف الفعالية"
+        cancelText="إلغاء"
+        variant="danger"
+        icon="trash"
+      />
     </motion.div>
   );
 };

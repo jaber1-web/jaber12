@@ -36,6 +36,10 @@ import { AddAttendeeModal } from '../components/AddAttendeeModal';
 import { EditAttendeeModal } from '../components/EditAttendeeModal';
 import { WhatsAppMessageModal } from '../components/WhatsAppMessageModal';
 import { BulkWhatsAppModal } from '../components/BulkWhatsAppModal';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { AttendanceRoundsBar } from '../components/AttendanceRoundsBar';
+import { NewRoundModal } from '../components/NewRoundModal';
+import { MultiRoundMatrixModal } from '../components/MultiRoundMatrixModal';
 
 export const AttendancePage: React.FC = () => {
   const { eventId } = useParams<{ eventId: string }>();
@@ -53,6 +57,12 @@ export const AttendancePage: React.FC = () => {
     editAttendeeInEvent,
     setReportModalEvent,
     setPdfModalEvent,
+    createAttendanceRound,
+    deleteAttendanceRound,
+    renameAttendanceRound,
+    setActiveAttendanceRound,
+    updateAttendeeRoundStatus,
+    markAllRoundAttendees,
   } = useApp();
 
   const event = eventId ? getEventById(eventId) : undefined;
@@ -61,10 +71,38 @@ export const AttendancePage: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'present' | 'absent' | 'pending'>('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingAttendee, setEditingAttendee] = useState<EventAttendee | null>(null);
+  const [attendeeToRemove, setAttendeeToRemove] = useState<{ personId: string; name: string } | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [whatsAppAttendee, setWhatsAppAttendee] = useState<EventAttendee | null>(null);
   const [isBulkWhatsAppOpen, setIsBulkWhatsAppOpen] = useState(false);
   const [bulkWhatsAppTarget, setBulkWhatsAppTarget] = useState<'absent' | 'present' | 'all'>('absent');
+
+  // Periodic Attendance Rounds State
+  const [isNewRoundModalOpen, setIsNewRoundModalOpen] = useState(false);
+  const [isMatrixModalOpen, setIsMatrixModalOpen] = useState(false);
+  const [isFilteringDropouts, setIsFilteringDropouts] = useState(false);
+
+  const rounds = event?.rounds || [];
+  const activeRoundId = event?.activeRoundId || (rounds.length > 0 ? rounds[rounds.length - 1]?.id : undefined);
+  const activeRoundIndex = rounds.findIndex((r) => r.id === activeRoundId);
+
+  // Identify attendees who dropped out (present in previous round, absent now)
+  const dropoutsSet = useMemo(() => {
+    if (activeRoundIndex <= 0 || !rounds[activeRoundIndex]) return new Set<string>();
+    const activeRound = rounds[activeRoundIndex];
+    const prevRounds = rounds.slice(0, activeRoundIndex);
+    const set = new Set<string>();
+    (event?.attendees || []).forEach((att) => {
+      const isAbsentNow = (activeRound.records[att.personId] || att.status) === 'absent';
+      const wasPresentBefore = prevRounds.some(
+        (pr) => pr.records && pr.records[att.personId] === 'present'
+      );
+      if (isAbsentNow && wasPresentBefore) {
+        set.add(att.personId);
+      }
+    });
+    return set;
+  }, [rounds, activeRoundIndex, event?.attendees]);
 
   const filteredAttendees = useMemo(() => {
     const attendees = event?.attendees || [];
@@ -76,10 +114,16 @@ export const AttendancePage: React.FC = () => {
         (attendee?.email && attendee.email.toLowerCase().includes(searchQuery.toLowerCase()));
 
       if (!matchesSearch) return false;
+
+      // Filter by dropouts if active
+      if (isFilteringDropouts && !dropoutsSet.has(attendee.personId)) {
+        return false;
+      }
+
       if (filterStatus === 'all') return true;
       return attendee?.status === filterStatus;
     });
-  }, [event?.attendees, searchQuery, filterStatus]);
+  }, [event?.attendees, searchQuery, filterStatus, isFilteringDropouts, dropoutsSet]);
 
   if (!event) {
     return (
@@ -105,7 +149,11 @@ export const AttendancePage: React.FC = () => {
   const stats = getAttendanceStats(event);
 
   const handleStatusClick = (personId: string, newStatus: AttendanceStatus) => {
-    updateAttendeeStatus(event.id, personId, newStatus);
+    if (rounds.length > 0 && activeRoundId) {
+      updateAttendeeRoundStatus(event.id, activeRoundId, personId, newStatus);
+    } else {
+      updateAttendeeStatus(event.id, personId, newStatus);
+    }
 
     if (newStatus === 'present' && settings.confettiEnabled) {
       confetti({
@@ -117,7 +165,12 @@ export const AttendancePage: React.FC = () => {
   };
 
   const handleMarkAll = (status: AttendanceStatus) => {
-    markAllAttendees(event.id, status);
+    if (rounds.length > 0 && activeRoundId) {
+      markAllRoundAttendees(event.id, activeRoundId, status);
+    } else {
+      markAllAttendees(event.id, status);
+    }
+
     if (status === 'present' && settings.confettiEnabled) {
       confetti({
         particleCount: 50,
@@ -255,6 +308,19 @@ export const AttendancePage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Periodic Attendance Rounds Control Bar */}
+      <AttendanceRoundsBar
+        event={event}
+        activeRoundId={activeRoundId}
+        onSelectRound={(roundId) => setActiveAttendanceRound(event.id, roundId)}
+        onOpenNewRoundModal={() => setIsNewRoundModalOpen(true)}
+        onOpenMatrixModal={() => setIsMatrixModalOpen(true)}
+        onRenameRound={(roundId, newName) => renameAttendanceRound(event.id, roundId, newName)}
+        onDeleteRound={(roundId) => deleteAttendanceRound(event.id, roundId)}
+        onFilterDropouts={() => setIsFilteringDropouts(!isFilteringDropouts)}
+        isFilteringDropouts={isFilteringDropouts}
+      />
 
       {/* Action Controls & Filters */}
       <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-gray-200 shadow-xs flex flex-col gap-3">
@@ -487,11 +553,7 @@ export const AttendancePage: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (confirm(`هل أنت متأكد من إزالة "${attendee.name}" من هذه الفعالية؟`)) {
-                            removeAttendeeFromEvent(event.id, attendee.personId);
-                          }
-                        }}
+                        onClick={() => setAttendeeToRemove({ personId: attendee.personId, name: attendee.name })}
                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                         title="حذف"
                       >
@@ -499,6 +561,45 @@ export const AttendancePage: React.FC = () => {
                       </button>
                     </div>
                   </div>
+
+                  {/* Multi-Round Checkpoint Indicators */}
+                  {rounds.length > 1 && (
+                    <div className="flex items-center gap-1.5 mb-2.5 px-2 py-1.5 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-100 dark:border-slate-800 overflow-x-auto">
+                      <span className="text-[10px] text-gray-500 font-bold shrink-0 ml-1">
+                        الجولات:
+                      </span>
+                      {rounds.map((r, rIdx) => {
+                        const rSt = r.records ? r.records[attendee.personId] : undefined;
+                        const isThisActive = r.id === activeRoundId;
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveAttendanceRound(event.id, r.id);
+                            }}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                              rSt === 'present'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : rSt === 'absent'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : 'bg-gray-200/80 text-gray-600'
+                            } ${isThisActive ? 'ring-2 ring-slate-900 shadow-2xs' : 'opacity-85'}`}
+                            title={`${r.name}: ${rSt === 'present' ? 'حاضر' : rSt === 'absent' ? 'غائب' : 'معلق'}`}
+                          >
+                            <span>ج{rIdx + 1}</span>
+                            <span>{rSt === 'present' ? '✔' : rSt === 'absent' ? '✖' : '⏳'}</span>
+                          </button>
+                        );
+                      })}
+
+                      {dropoutsSet.has(attendee.personId) && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200 shrink-0 mr-auto">
+                          ⚠️ غادر مبكراً
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {/* Big Touch-Friendly Buttons for Phone */}
                   <div className="grid grid-cols-3 gap-1.5 bg-gray-100/90 p-1 rounded-xl border border-gray-200">
@@ -588,6 +689,34 @@ export const AttendancePage: React.FC = () => {
 
                         <td className="px-4 py-3">
                           <div className="font-bold text-[#1A1A1A]">{attendee.name}</div>
+                          {rounds.length > 1 && (
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              {rounds.map((r, rIdx) => {
+                                const rSt = r.records ? r.records[attendee.personId] : undefined;
+                                const isThisActive = r.id === activeRoundId;
+                                return (
+                                  <span
+                                    key={r.id}
+                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                                      rSt === 'present'
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold'
+                                        : rSt === 'absent'
+                                        ? 'bg-rose-50 text-rose-700 border border-rose-200 font-bold'
+                                        : 'bg-gray-100 text-gray-500'
+                                    } ${isThisActive ? 'ring-1 ring-slate-900' : ''}`}
+                                    title={`${r.name}: ${rSt === 'present' ? 'حاضر' : rSt === 'absent' ? 'غائب' : 'معلق'}`}
+                                  >
+                                    ج{rIdx + 1}: {rSt === 'present' ? '✔' : rSt === 'absent' ? '✖' : '⏳'}
+                                  </span>
+                                );
+                              })}
+                              {dropoutsSet.has(attendee.personId) && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                  ⚠️ غادر مبكراً
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <div className="text-[11px] text-gray-400 md:hidden flex items-center gap-1.5 mt-0.5" dir="ltr">
                             <span>{attendee.phone}</span>
                             {attendee.stcNumber && (
@@ -693,11 +822,7 @@ export const AttendancePage: React.FC = () => {
                             </button>
                             <button
                               type="button"
-                              onClick={() => {
-                                if (confirm(`هل أنت متأكد من إزالة "${attendee.name}" من هذه الفعالية؟`)) {
-                                 removeAttendeeFromEvent(event.id, attendee.personId);
-                                }
-                              }}
+                              onClick={() => setAttendeeToRemove({ personId: attendee.personId, name: attendee.name })}
                               className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                               title="حذف"
                             >
@@ -823,6 +948,47 @@ export const AttendancePage: React.FC = () => {
           initialTarget={bulkWhatsAppTarget}
         />
       )}
+
+      {/* Periodic Rounds Modals */}
+      {isNewRoundModalOpen && (
+        <NewRoundModal
+          isOpen={isNewRoundModalOpen}
+          onClose={() => setIsNewRoundModalOpen(false)}
+          currentRoundsCount={rounds.length}
+          onCreateRound={(name, copyPrevious) => {
+            createAttendanceRound(event.id, name, copyPrevious);
+          }}
+        />
+      )}
+
+      {isMatrixModalOpen && (
+        <MultiRoundMatrixModal
+          isOpen={isMatrixModalOpen}
+          onClose={() => setIsMatrixModalOpen(false)}
+          event={event}
+          onUpdateStatus={(roundId, personId, status) => {
+            updateAttendeeRoundStatus(event.id, roundId, personId, status);
+          }}
+        />
+      )}
+
+      {/* Confirm Remove Attendee Modal */}
+      <ConfirmModal
+        isOpen={Boolean(attendeeToRemove)}
+        onClose={() => setAttendeeToRemove(null)}
+        onConfirm={() => {
+          if (attendeeToRemove) {
+            removeAttendeeFromEvent(event.id, attendeeToRemove.personId);
+            setAttendeeToRemove(null);
+          }
+        }}
+        title="إزالة المشارك"
+        message={`هل أنت متأكد من إزالة "${attendeeToRemove?.name}" من كشف حضور هذه الفعالية؟`}
+        confirmText="نعم، إزالة"
+        cancelText="إلغاء"
+        variant="danger"
+        icon="trash"
+      />
     </motion.div>
   );
 };

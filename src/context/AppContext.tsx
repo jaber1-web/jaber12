@@ -12,6 +12,7 @@ import {
   Person,
   EventAttendee,
   AttendanceStatus,
+  AttendanceRound,
   AppSettings,
   ThemeMode,
 } from '../types';
@@ -89,6 +90,23 @@ interface AppContextType {
   addExistingPersonsToEvent: (eventId: string, selectedPersons: Person[]) => void;
   removeAttendeeFromEvent: (eventId: string, personId: string) => void;
   editAttendeeInEvent: (eventId: string, updatedAttendee: EventAttendee, updateGlobal: boolean) => void;
+
+  // Periodic Attendance Rounds Actions
+  createAttendanceRound: (eventId: string, roundName?: string, copyPrevious?: boolean) => AttendanceRound;
+  deleteAttendanceRound: (eventId: string, roundId: string) => void;
+  renameAttendanceRound: (eventId: string, roundId: string, newName: string) => void;
+  setActiveAttendanceRound: (eventId: string, roundId: string) => void;
+  updateAttendeeRoundStatus: (
+    eventId: string,
+    roundId: string,
+    personId: string,
+    status: AttendanceStatus
+  ) => void;
+  markAllRoundAttendees: (
+    eventId: string,
+    roundId: string,
+    status: AttendanceStatus
+  ) => void;
 
   // Directory / Person Actions
   addPerson: (person: Omit<Person, 'id' | 'createdAt' | 'updatedAt'>) => void;
@@ -265,6 +283,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         document.documentElement.classList.remove('dark');
         document.documentElement.style.colorScheme = 'light';
       }
+
+      // Apply dynamic brand theme attribute
+      document.documentElement.setAttribute('data-theme', settings.themeColor || 'blue');
+      document.documentElement.setAttribute('data-fontsize', settings.fontSize || 'normal');
     };
 
     updateTheme();
@@ -275,7 +297,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       mediaQuery.addEventListener('change', listener);
       return () => mediaQuery.removeEventListener('change', listener);
     }
-  }, [settings.mode]);
+  }, [settings.mode, settings.themeColor, settings.fontSize]);
 
   const toggleThemeMode = () => {
     const nextMode: ThemeMode = isDarkMode ? 'light' : 'dark';
@@ -483,8 +505,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let updatedEventToSave: EventItem | null = null;
     const updatedEvents = events.map((evt) => {
       if (evt.id !== eventId) return evt;
+
+      const activeRoundId = evt.activeRoundId || (evt.rounds && evt.rounds.length > 0 ? evt.rounds[evt.rounds.length - 1].id : undefined);
+      const updatedRounds = evt.rounds && activeRoundId
+        ? evt.rounds.map((r) => {
+            if (r.id !== activeRoundId) return r;
+            return {
+              ...r,
+              records: {
+                ...r.records,
+                [personId]: status,
+              },
+            };
+          })
+        : evt.rounds;
+
       const updated = {
         ...evt,
+        rounds: updatedRounds,
         updatedAt: new Date().toISOString(),
         attendees: (evt.attendees || []).map((att) => {
           if (att.personId !== personId) return att;
@@ -518,8 +556,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let updatedEventToSave: EventItem | null = null;
     const updatedEvents = events.map((evt) => {
       if (evt.id !== eventId) return evt;
+
+      const activeRoundId = evt.activeRoundId || (evt.rounds && evt.rounds.length > 0 ? evt.rounds[evt.rounds.length - 1].id : undefined);
+      const updatedRounds = evt.rounds && activeRoundId
+        ? evt.rounds.map((r) => {
+            if (r.id !== activeRoundId) return r;
+            const newRecords = { ...r.records };
+            (evt.attendees || []).forEach((att) => {
+              newRecords[att.personId] = status;
+            });
+            return {
+              ...r,
+              records: newRecords,
+            };
+          })
+        : evt.rounds;
+
       const updated = {
         ...evt,
+        rounds: updatedRounds,
         updatedAt: new Date().toISOString(),
         attendees: (evt.attendees || []).map((att) => ({
           ...att,
@@ -779,6 +834,283 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // Create Periodic Attendance Round
+  const createAttendanceRound = (eventId: string, roundName?: string, copyPrevious: boolean = true): AttendanceRound => {
+    let newRound: AttendanceRound | null = null;
+    let updatedEventToSave: EventItem | null = null;
+
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+
+      const existingRounds = evt.rounds || [];
+      let baseRounds = [...existingRounds];
+
+      // If no rounds exist yet, initialize Round 1 from current attendee statuses
+      if (baseRounds.length === 0) {
+        const initialRoundId = `round-init-${Date.now()}`;
+        const initialRecords: Record<string, AttendanceStatus> = {};
+        (evt.attendees || []).forEach((a) => {
+          initialRecords[a.personId] = a.status;
+        });
+        baseRounds.push({
+          id: initialRoundId,
+          name: 'الجولة 1 (الحضور المبدئي)',
+          createdAt: evt.createdAt || new Date().toISOString(),
+          records: initialRecords,
+        });
+      }
+
+      const prevRound = baseRounds[baseRounds.length - 1];
+      const newRoundIndex = baseRounds.length + 1;
+      const roundTimeFormatted = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+      const finalName = roundName?.trim() || `الجولة ${newRoundIndex} (${roundTimeFormatted})`;
+
+      const newRecords: Record<string, AttendanceStatus> = {};
+      (evt.attendees || []).forEach((a) => {
+        if (copyPrevious && prevRound && prevRound.records[a.personId]) {
+          newRecords[a.personId] = prevRound.records[a.personId];
+        } else {
+          newRecords[a.personId] = 'pending';
+        }
+      });
+
+      newRound = {
+        id: `round-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: finalName,
+        createdAt: new Date().toISOString(),
+        records: newRecords,
+      };
+
+      const finalRounds = [...baseRounds, newRound];
+
+      const updatedAttendees = (evt.attendees || []).map((att) => ({
+        ...att,
+        status: newRecords[att.personId] || att.status,
+      }));
+
+      const updated: EventItem = {
+        ...evt,
+        rounds: finalRounds,
+        activeRoundId: newRound.id,
+        attendees: updatedAttendees,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
+
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch(console.error);
+    }
+
+    return newRound!;
+  };
+
+  // Delete Periodic Attendance Round
+  const deleteAttendanceRound = (eventId: string, roundId: string) => {
+    let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const remainingRounds = (evt.rounds || []).filter((r) => r.id !== roundId);
+      const nextActiveRound = remainingRounds[remainingRounds.length - 1];
+      const nextActiveId = nextActiveRound ? nextActiveRound.id : undefined;
+
+      const updatedAttendees = (evt.attendees || []).map((att) => {
+        if (nextActiveRound && nextActiveRound.records[att.personId]) {
+          return { ...att, status: nextActiveRound.records[att.personId] };
+        }
+        return att;
+      });
+
+      const updated: EventItem = {
+        ...evt,
+        rounds: remainingRounds,
+        activeRoundId: nextActiveId,
+        attendees: updatedAttendees,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
+
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch(console.error);
+    }
+  };
+
+  // Rename Periodic Attendance Round
+  const renameAttendanceRound = (eventId: string, roundId: string, newName: string) => {
+    if (!newName.trim()) return;
+    let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const updatedRounds = (evt.rounds || []).map((r) =>
+        r.id === roundId ? { ...r, name: newName.trim() } : r
+      );
+      const updated: EventItem = {
+        ...evt,
+        rounds: updatedRounds,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
+
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch(console.error);
+    }
+  };
+
+  // Set Active Periodic Attendance Round
+  const setActiveAttendanceRound = (eventId: string, roundId: string) => {
+    let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+      const targetRound = (evt.rounds || []).find((r) => r.id === roundId);
+      if (!targetRound) return evt;
+
+      const updatedAttendees = (evt.attendees || []).map((att) => ({
+        ...att,
+        status: targetRound.records[att.personId] || 'pending',
+      }));
+
+      const updated: EventItem = {
+        ...evt,
+        activeRoundId: roundId,
+        attendees: updatedAttendees,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
+
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch(console.error);
+    }
+  };
+
+  // Update Attendee Round Status
+  const updateAttendeeRoundStatus = (
+    eventId: string,
+    roundId: string,
+    personId: string,
+    status: AttendanceStatus
+  ) => {
+    if (status === 'present' || status === 'absent') {
+      playAttendanceFeedback(status, settings.soundEnabled);
+    }
+
+    let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+
+      const existingRounds = evt.rounds || [];
+      const updatedRounds = existingRounds.map((r) => {
+        if (r.id !== roundId) return r;
+        return {
+          ...r,
+          records: {
+            ...r.records,
+            [personId]: status,
+          },
+        };
+      });
+
+      const isActive = evt.activeRoundId === roundId || (!evt.activeRoundId && existingRounds[existingRounds.length - 1]?.id === roundId);
+      const updatedAttendees = (evt.attendees || []).map((att) => {
+        if (att.personId !== personId || !isActive) return att;
+        return {
+          ...att,
+          status,
+          markedAt: status !== 'pending' ? new Date().toISOString() : '',
+        };
+      });
+
+      const updated: EventItem = {
+        ...evt,
+        rounds: updatedRounds,
+        attendees: updatedAttendees,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
+
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch(console.error);
+    }
+  };
+
+  // Mark All Round Attendees
+  const markAllRoundAttendees = (
+    eventId: string,
+    roundId: string,
+    status: AttendanceStatus
+  ) => {
+    if (status === 'present' || status === 'absent') {
+      playAttendanceFeedback(status, settings.soundEnabled);
+    }
+
+    let updatedEventToSave: EventItem | null = null;
+    const updatedEvents = events.map((evt) => {
+      if (evt.id !== eventId) return evt;
+
+      const existingRounds = evt.rounds || [];
+      const updatedRounds = existingRounds.map((r) => {
+        if (r.id !== roundId) return r;
+        const newRecords = { ...r.records };
+        (evt.attendees || []).forEach((att) => {
+          newRecords[att.personId] = status;
+        });
+        return {
+          ...r,
+          records: newRecords,
+        };
+      });
+
+      const isActive = evt.activeRoundId === roundId || (!evt.activeRoundId && existingRounds[existingRounds.length - 1]?.id === roundId);
+      const updatedAttendees = (evt.attendees || []).map((att) => {
+        if (!isActive) return att;
+        return {
+          ...att,
+          status,
+          markedAt: status !== 'pending' ? new Date().toISOString() : '',
+        };
+      });
+
+      const updated: EventItem = {
+        ...evt,
+        rounds: updatedRounds,
+        attendees: updatedAttendees,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedEventToSave = updated;
+      return updated;
+    });
+
+    setEvents(updatedEvents);
+    saveEvents(updatedEvents);
+
+    if (updatedEventToSave) {
+      saveEventToFirestore(updatedEventToSave).catch(console.error);
+    }
+  };
+
   // Add Person to Directory
   const addPerson = (personData: Omit<Person, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newPerson: Person = {
@@ -1009,6 +1341,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addExistingPersonsToEvent,
         removeAttendeeFromEvent,
         editAttendeeInEvent,
+        createAttendanceRound,
+        deleteAttendanceRound,
+        renameAttendanceRound,
+        setActiveAttendanceRound,
+        updateAttendeeRoundStatus,
+        markAllRoundAttendees,
         addPerson,
         updatePerson,
         deletePerson,

@@ -52,6 +52,7 @@ export const Sidebar: React.FC = () => {
 
   const getThemeBgColor = (theme: ThemeColor) => {
     switch (theme) {
+      case 'monochrome': return 'bg-black text-white dark:bg-zinc-100 dark:text-black';
       case 'emerald': return 'bg-emerald-600';
       case 'violet': return 'bg-purple-600';
       case 'amber': return 'bg-amber-600';
@@ -66,6 +67,7 @@ export const Sidebar: React.FC = () => {
 
   const getThemeActiveItemStyle = (theme: ThemeColor) => {
     switch (theme) {
+      case 'monochrome': return 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 border-zinc-700 font-bold';
       case 'emerald': return 'bg-emerald-50 text-emerald-700 border-emerald-200 font-bold';
       case 'violet': return 'bg-purple-50 text-purple-700 border-purple-200 font-bold';
       case 'amber': return 'bg-amber-50 text-amber-800 border-amber-200 font-bold';
@@ -80,6 +82,7 @@ export const Sidebar: React.FC = () => {
 
   const getThemeBottomNavActive = (theme: ThemeColor) => {
     switch (theme) {
+      case 'monochrome': return 'text-black dark:text-white font-black';
       case 'emerald': return 'text-emerald-600';
       case 'violet': return 'text-purple-600';
       case 'amber': return 'text-amber-700';
@@ -94,6 +97,7 @@ export const Sidebar: React.FC = () => {
 
   const getThemeLightBgColor = (theme: ThemeColor) => {
     switch (theme) {
+      case 'monochrome': return 'bg-zinc-100 text-zinc-900 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700';
       case 'emerald': return 'bg-emerald-50 text-emerald-700 border-emerald-100';
       case 'violet': return 'bg-purple-50 text-purple-700 border-purple-100';
       case 'amber': return 'bg-amber-50 text-amber-700 border-amber-100';
@@ -109,6 +113,7 @@ export const Sidebar: React.FC = () => {
   const getThemeIconColor = (theme: ThemeColor, isActive: boolean) => {
     if (!isActive) return 'text-gray-400 group-hover:text-gray-600';
     switch (theme) {
+      case 'monochrome': return 'text-black dark:text-white';
       case 'emerald': return 'text-emerald-600';
       case 'violet': return 'text-purple-600';
       case 'amber': return 'text-amber-600';
@@ -214,9 +219,9 @@ export const Sidebar: React.FC = () => {
                 {renderPresetLogoIcon(settings.presetIcon)}
               </div>
             )}
-            <div className="overflow-hidden">
-              <span className="text-xs sm:text-sm font-extrabold text-[#1A1A1A] block max-w-[140px] sm:max-w-[200px] truncate leading-tight">
-                {settings.orgName || 'نظام إدارة الحضور'}
+            <div className="min-w-0">
+              <span className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-slate-100 block max-w-[190px] sm:max-w-[280px] truncate leading-tight">
+                {settings.orgName || 'نظام إدارة الحضور والفعاليات'}
               </span>
             </div>
           </Link>
@@ -295,11 +300,11 @@ export const Sidebar: React.FC = () => {
                   {renderPresetLogoIcon(settings.presetIcon)}
                 </div>
               )}
-              <div className="overflow-hidden">
-                <h1 className="text-sm font-extrabold text-[#1A1A1A] truncate max-w-[160px]">
-                  {settings.orgName || 'نظام إدارة الحضور'}
+              <div className="min-w-0 flex-1">
+                <h1 className="text-sm font-extrabold text-slate-900 dark:text-slate-100 leading-snug">
+                  {settings.orgName || 'نظام إدارة الحضور والفعاليات'}
                 </h1>
-                <p className="text-[11px] text-gray-500 truncate max-w-[160px]">
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
                   {settings.orgSubtitle || 'تسجيل الحضور والتقارير'}
                 </p>
               </div>

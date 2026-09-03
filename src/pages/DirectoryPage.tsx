@@ -25,6 +25,7 @@ import { Person } from '../types';
 import { useApp } from '../context/AppContext';
 import { motion } from 'motion/react';
 import { openWhatsAppChat } from '../utils/whatsappUtils';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export const DirectoryPage: React.FC = () => {
   const navigate = useNavigate();
@@ -40,6 +41,8 @@ export const DirectoryPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
+  const [personToDelete, setPersonToDelete] = useState<Person | null>(null);
+  const [importFeedback, setImportFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [selectedPersonForHistory, setSelectedPersonForHistory] = useState<Person | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
@@ -140,12 +143,22 @@ export const DirectoryPage: React.FC = () => {
 
         if (imported.length > 0) {
           importPersons(imported);
-          alert(`تم استيراد ${imported.length} شخص بنجاح إلى قاعدة البيانات!`);
+          setImportFeedback({
+            type: 'success',
+            message: `تم استيراد ${imported.length} شخص بنجاح إلى قاعدة البيانات!`,
+          });
+          setTimeout(() => setImportFeedback(null), 5000);
         } else {
-          alert('لم يتم العثور على بيانات صالحة في الملف، تأكد من وجود عمود "الاسم" أو "الاسم الكامل"');
+          setImportFeedback({
+            type: 'error',
+            message: 'لم يتم العثور على بيانات صالحة في الملف، تأكد من وجود عمود "الاسم" أو "الاسم الكامل"',
+          });
         }
       } catch {
-        alert('حدث خطأ أثناء قراءة ملف Excel');
+        setImportFeedback({
+          type: 'error',
+          message: 'حدث خطأ أثناء قراءة ملف Excel',
+        });
       }
     };
     reader.readAsBinaryString(file);
@@ -177,6 +190,32 @@ export const DirectoryPage: React.FC = () => {
       className="space-y-4 sm:space-y-6 pb-24 sm:pb-20"
     >
       {/* Top Breadcrumbs */}
+      {importFeedback && (
+        <div
+          className={`p-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-between gap-3 border shadow-xs animate-in fade-in duration-200 ${
+            importFeedback.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-rose-50 text-rose-800 border-rose-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {importFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            )}
+            <span>{importFeedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setImportFeedback(null)}
+            className="p-1 hover:bg-black/10 rounded-lg cursor-pointer transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-semibold text-gray-500">
           <Link
@@ -382,11 +421,7 @@ export const DirectoryPage: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (confirm(`هل أنت متأكد من حذف "${person.name}" من قاعدة البيانات؟`)) {
-                            deletePerson(person.id);
-                          }
-                        }}
+                        onClick={() => setPersonToDelete(person)}
                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                         title="حذف"
                       >
@@ -536,11 +571,7 @@ export const DirectoryPage: React.FC = () => {
                             </button>
                             <button
                               type="button"
-                              onClick={() => {
-                                if (confirm(`هل أنت متأكد من حذف "${person.name}" من قاعدة البيانات؟`)) {
-                                  deletePerson(person.id);
-                                }
-                              }}
+                              onClick={() => setPersonToDelete(person)}
                               className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                               title="حذف"
                             >
@@ -811,6 +842,24 @@ export const DirectoryPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Confirm Delete Person Modal */}
+      <ConfirmModal
+        isOpen={Boolean(personToDelete)}
+        onClose={() => setPersonToDelete(null)}
+        onConfirm={() => {
+          if (personToDelete) {
+            deletePerson(personToDelete.id);
+            setPersonToDelete(null);
+          }
+        }}
+        title="حذف الشخص من الدليل"
+        message={`هل أنت متأكد من حذف "${personToDelete?.name}" من قاعدة البيانات نهائياً؟`}
+        confirmText="نعم، حذف الشخص"
+        cancelText="إلغاء"
+        variant="danger"
+        icon="trash"
+      />
     </motion.div>
   );
 };

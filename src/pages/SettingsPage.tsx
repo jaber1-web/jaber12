@@ -33,6 +33,7 @@ import {
   ShieldAlert,
   ArrowRight,
   RefreshCw,
+  Link as LinkIcon,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useApp } from '../context/AppContext';
@@ -74,6 +75,13 @@ export const SettingsPage: React.FC = () => {
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [backupMessage, setBackupMessage] = useState<{ text: string; success: boolean } | null>(null);
+  const [logoError, setLogoError] = useState<string>('');
+  const [logoSuccess, setLogoSuccess] = useState<string>('');
+  const [isOptimizingLogo, setIsOptimizingLogo] = useState<boolean>(false);
+  const [isDraggingLogo, setIsDraggingLogo] = useState<boolean>(false);
+  const [showUrlInput, setShowUrlInput] = useState<boolean>(false);
+  const [directLogoUrl, setDirectLogoUrl] = useState<string>('');
+  const [logoPreviewBg, setLogoPreviewBg] = useState<'white' | 'dark'>('white');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const restoreFileInputRef = useRef<HTMLInputElement>(null);
@@ -121,26 +129,127 @@ export const SettingsPage: React.FC = () => {
     setTimeout(() => setSaveToast(false), 2200);
   };
 
-  // Handle Logo Upload (converts to base64)
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // Process & Optimize Image via Canvas (prevents localStorage quota issues and guarantees crisp loading)
+  const processAndOptimizeImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      // SVGs are vector and can be read directly as DataURL
+      if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          // Downscale to max 640px dimension while keeping aspect ratio
+          const maxDimension = 640;
+          let { width, height } = img;
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+          const isWebp = file.type === 'image/webp' || file.name.toLowerCase().endsWith('.webp');
+          
+          let format = 'image/jpeg';
+          let quality = 0.9;
+          if (isPng) {
+            format = 'image/png';
+          } else if (isWebp) {
+            format = 'image/webp';
+          }
+
+          const optimized = canvas.toDataURL(format, quality);
+          resolve(optimized);
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Process selected or dropped file
+  const handleLogoFile = async (file: File) => {
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      alert('حجم الصورة كبير، يرجى اختيار صورة أقل من 2 ميغابايت');
+    if (!file.type.startsWith('image/') && !file.name.match(/\.(png|jpg|jpeg|svg|webp|gif)$/i)) {
+      setLogoError('يرجى اختيار ملف صورة صالح (PNG, JPG, SVG, WebP)');
+      setTimeout(() => setLogoError(''), 4000);
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
+    if (file.size > 20 * 1024 * 1024) {
+      setLogoError('حجم الصورة كبير، يرجى اختيار صورة أقل من 20 ميغابايت');
+      setTimeout(() => setLogoError(''), 4000);
+      return;
+    }
+
+    try {
+      setIsOptimizingLogo(true);
+      setLogoError('');
+      const optimizedBase64 = await processAndOptimizeImage(file);
       updateSettings({
-        customLogoUrl: base64,
+        customLogoUrl: optimizedBase64,
         logoType: 'custom',
       });
       showSavedNotification();
-    };
-    reader.readAsDataURL(file);
+      setLogoSuccess('تم تعيين الشعار وحفظه بنجاح!');
+      setTimeout(() => setLogoSuccess(''), 4500);
+    } catch (err) {
+      console.error('Failed to process logo:', err);
+      setLogoError('حدث خطأ أثناء معالجة الصورة، يرجى تجربة صورة أخرى');
+    } finally {
+      setIsOptimizingLogo(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle file input change
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleLogoFile(file);
+    }
+  };
+
+  // Apply direct image URL
+  const handleApplyLogoUrl = () => {
+    if (!directLogoUrl.trim()) return;
+    updateSettings({
+      customLogoUrl: directLogoUrl.trim(),
+      logoType: 'custom',
+    });
+    showSavedNotification();
+    setLogoSuccess('تم اعتماد رابط الشعار وحفظه بنجاح!');
+    setShowUrlInput(false);
+    setDirectLogoUrl('');
+    setTimeout(() => setLogoSuccess(''), 4500);
   };
 
   const removeCustomLogo = () => {
@@ -149,7 +258,28 @@ export const SettingsPage: React.FC = () => {
       logoType: 'preset',
     });
     showSavedNotification();
+    setLogoSuccess('تمت إزالة الشعار واستعادة الرمز الرسمي');
+    setTimeout(() => setLogoSuccess(''), 3000);
   };
+
+  // Support pasting image anywhere on settings page
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) {
+            handleLogoFile(file);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
 
   // Test Sound
   const handleTestSound = () => {
@@ -220,14 +350,15 @@ export const SettingsPage: React.FC = () => {
     { id: 'sparkles', name: 'بريق الإنجاز', icon: <Sparkles className="w-5 h-5" /> },
   ];
 
-  const themeColorsList: { id: ThemeColor; name: string; bg: string; border: string }[] = [
-    { id: 'blue', name: 'الأزرق الكلاسيكي', bg: 'bg-blue-600', border: 'border-blue-600' },
-    { id: 'emerald', name: 'الأخضر الزمردي', bg: 'bg-emerald-600', border: 'border-emerald-600' },
-    { id: 'violet', name: 'البنفسجي الملكي', bg: 'bg-purple-600', border: 'border-purple-600' },
-    { id: 'amber', name: 'الكحلي والذهبي', bg: 'bg-amber-600', border: 'border-amber-600' },
-    { id: 'slate', name: 'التيتانيوم العصري', bg: 'bg-slate-700', border: 'border-slate-700' },
-    { id: 'rose', name: 'العنابي الراقي', bg: 'bg-rose-600', border: 'border-rose-600' },
-    { id: 'teal', name: 'التيل الهادئ', bg: 'bg-teal-600', border: 'border-teal-600' },
+  const themeColorsList: { id: ThemeColor; name: string; bg: string; border: string; desc: string }[] = [
+    { id: 'monochrome', name: 'الأسود الملكي (مونوكروم)', bg: 'bg-black text-white dark:bg-zinc-100 dark:text-zinc-950', border: 'border-black dark:border-white', desc: 'مثالي للشعار الأسود والأبيض' },
+    { id: 'slate', name: 'التيتانيوم العصري', bg: 'bg-slate-700', border: 'border-slate-700', desc: 'رمادي داكن ورسمي' },
+    { id: 'blue', name: 'الأزرق الكلاسيكي', bg: 'bg-blue-600', border: 'border-blue-600', desc: 'اللون الافتراضي المعتمد' },
+    { id: 'emerald', name: 'الأخضر الزمردي', bg: 'bg-emerald-600', border: 'border-emerald-600', desc: 'حيوي وطبيعي' },
+    { id: 'violet', name: 'البنفسجي الملكي', bg: 'bg-purple-600', border: 'border-purple-600', desc: 'أنيق ومميز' },
+    { id: 'amber', name: 'الكحلي والذهبي', bg: 'bg-amber-600', border: 'border-amber-600', desc: 'دافئ وجذاب' },
+    { id: 'rose', name: 'العنابي الراقي', bg: 'bg-rose-600', border: 'border-rose-600', desc: 'فاخر وحصري' },
+    { id: 'teal', name: 'التيل الهادئ', bg: 'bg-teal-600', border: 'border-teal-600', desc: 'عصري وهادئ' },
   ];
 
   if (!isUnlocked) {
@@ -457,43 +588,220 @@ export const SettingsPage: React.FC = () => {
                 <span>شعار المنشأة أو النظام</span>
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                {/* Upload Custom Logo */}
-                <div className="border border-dashed border-gray-300 rounded-2xl p-5 text-center flex flex-col items-center justify-center bg-gray-50/60 hover:bg-gray-50 transition-colors">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleLogoUpload}
-                    accept="image/*"
-                    className="hidden"
-                  />
-                  <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
-                    <Upload className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-sm font-bold text-gray-800 mb-1">رفع شعار مخصص</h4>
-                  <p className="text-xs text-gray-400 mb-3">PNG, JPG, SVG بحد أقصى 2MB</p>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
-                  >
-                    اختيار صورة من الجهاز
-                  </button>
-                  {settings.customLogoUrl && (
-                    <button
-                      type="button"
-                      onClick={removeCustomLogo}
-                      className="text-xs text-rose-600 hover:text-rose-700 font-semibold mt-2 cursor-pointer"
-                    >
-                      إلغاء الشعار واستخدام الرموز الجاهزة
-                    </button>
-                  )}
-                </div>
+              <div className="space-y-4 pt-1">
+                {/* Upload or View Custom Logo */}
+                {settings.customLogoUrl && settings.logoType === 'custom' ? (
+                  <div className="bg-gray-50/80 dark:bg-slate-900/60 rounded-2xl p-5 border border-gray-200 dark:border-slate-800 space-y-4">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                      {/* Logo Preview with White/Dark test canvas */}
+                      <div className="flex flex-col items-center sm:items-start gap-2 w-full sm:w-auto">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-gray-700 dark:text-gray-300">الشعار النشط حالياً:</span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                            <CheckCircle2 className="w-3 h-3" />
+                            مفعّل ومعتمد
+                          </span>
+                        </div>
+                        
+                        {/* Background Switcher for B&W logos */}
+                        <div className="flex items-center gap-1 bg-gray-200 dark:bg-slate-800 p-1 rounded-xl text-xs">
+                          <span className="text-[10px] text-gray-500 px-2">معاينة على خلفية:</span>
+                          <button
+                            type="button"
+                            onClick={() => setLogoPreviewBg('white')}
+                            className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                              logoPreviewBg === 'white'
+                                ? 'bg-white text-slate-900 shadow-xs'
+                                : 'text-gray-600 hover:text-slate-900'
+                            }`}
+                          >
+                            ⚪ بيضاء
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setLogoPreviewBg('dark')}
+                            className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                              logoPreviewBg === 'dark'
+                                ? 'bg-slate-950 text-white shadow-xs'
+                                : 'text-gray-600 hover:text-slate-900'
+                            }`}
+                          >
+                            ⚫ داكنة
+                          </button>
+                        </div>
+                      </div>
 
-                {/* Preset Icons Picker */}
-                <div className="space-y-2">
-                  <span className="text-xs font-bold text-gray-700 block">أو اختر رمزاً رسمياً جاهزاً:</span>
-                  <div className="grid grid-cols-2 gap-2">
+                      {/* Display Image Box */}
+                      <div
+                        className={`w-full sm:w-48 h-28 rounded-xl border flex items-center justify-center p-3 transition-colors ${
+                          logoPreviewBg === 'dark'
+                            ? 'bg-zinc-950 border-zinc-800 shadow-inner'
+                            : 'bg-white border-gray-200 shadow-xs'
+                        }`}
+                      >
+                        <img
+                          src={settings.customLogoUrl}
+                          alt="Custom Brand Logo"
+                          className="max-h-full max-w-full object-contain rounded"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Actions on active logo */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-gray-200/80 dark:border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleLogoUpload}
+                          accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          disabled={isOptimizingLogo}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-950 text-white transition-all shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isOptimizingLogo ? 'animate-spin' : ''}`} />
+                          <span>استبدال بصورة أخرى</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowUrlInput(!showUrlInput)}
+                          className="px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <LinkIcon className="w-3.5 h-3.5" />
+                          <span>رابط URL</span>
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={removeCustomLogo}
+                        className="text-xs text-rose-600 hover:text-rose-700 dark:text-rose-400 font-bold px-3 py-2 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>إزالة الشعار المخصص والعودة للرموز</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Standard Drag & Drop Upload Zone */
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDraggingLogo(true);
+                    }}
+                    onDragLeave={() => setIsDraggingLogo(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDraggingLogo(false);
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) handleLogoFile(file);
+                    }}
+                    className={`border-2 border-dashed rounded-2xl p-6 text-center flex flex-col items-center justify-center transition-all ${
+                      isDraggingLogo
+                        ? 'border-slate-900 bg-slate-100 dark:border-white dark:bg-slate-800 scale-[1.01]'
+                        : 'border-gray-300 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40 hover:bg-gray-50 dark:hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleLogoUpload}
+                      accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                      className="hidden"
+                    />
+
+                    <div className="w-14 h-14 rounded-2xl bg-slate-900/10 dark:bg-white/10 text-slate-900 dark:text-white flex items-center justify-center mb-3">
+                      {isOptimizingLogo ? (
+                        <RefreshCw className="w-7 h-7 animate-spin" />
+                      ) : (
+                        <Upload className="w-7 h-7" />
+                      )}
+                    </div>
+
+                    <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-1">
+                      {isOptimizingLogo ? 'جاري معالجة وتثبيت الشعار...' : 'رفع شعار المنشأة (أسود وأبيض أو ملون)'}
+                    </h4>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 max-w-sm">
+                      اسحب الملف وأفلته هنا، أو الصق من الحافظة (Ctrl+V)، أو انقر للتصفح. ندعم صيغ PNG, SVG, JPG, WebP.
+                    </p>
+
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                      <button
+                        type="button"
+                        disabled={isOptimizingLogo}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-gray-100 dark:text-slate-950 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer active:scale-95 disabled:opacity-50"
+                      >
+                        اختيار صورة من الجهاز
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowUrlInput(!showUrlInput)}
+                        className="border border-gray-300 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <LinkIcon className="w-3.5 h-3.5" />
+                        <span>إدخال رابط مباشر</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Direct URL Input Row */}
+                {showUrlInput && (
+                  <div className="p-4 bg-gray-50 dark:bg-slate-900/80 rounded-xl border border-gray-200 dark:border-slate-800 space-y-2">
+                    <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block">
+                      أدخل رابط صورة الشعار المباشر (Direct Image URL):
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={directLogoUrl}
+                        onChange={(e) => setDirectLogoUrl(e.target.value)}
+                        placeholder="https://example.com/logo.png"
+                        className="flex-1 bg-white dark:bg-slate-950 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyLogoUrl}
+                        className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all"
+                      >
+                        اعتماد
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowUrlInput(false)}
+                        className="text-gray-500 hover:text-gray-700 text-xs px-2 cursor-pointer"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Status Messages */}
+                {logoError && (
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{logoError}</span>
+                  </div>
+                )}
+                {logoSuccess && (
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>{logoSuccess}</span>
+                  </div>
+                )}
+
+                {/* Preset Icons Picker as fallback */}
+                <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-slate-800">
+                  <span className="text-xs font-bold text-gray-700 dark:text-gray-300 block">أو اختر رمزاً رسمياً جاهزاً:</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {presetIconsList.map(item => {
                       const isSelected = settings.logoType === 'preset' && settings.presetIcon === item.id;
                       return (
@@ -509,11 +817,11 @@ export const SettingsPage: React.FC = () => {
                           }}
                           className={`p-2.5 rounded-xl border text-right flex items-center gap-2 transition-all cursor-pointer ${
                             isSelected
-                              ? 'bg-blue-50 border-blue-500 text-blue-900 ring-2 ring-blue-500/20 font-bold'
-                              : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                              ? 'bg-slate-900 border-slate-900 text-white shadow-xs font-bold dark:bg-zinc-100 dark:text-zinc-950 dark:border-white'
+                              : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50'
                           }`}
                         >
-                          <div className={`p-1.5 rounded-lg ${isSelected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                          <div className={`p-1.5 rounded-lg ${isSelected ? 'bg-white/20 text-white dark:text-zinc-950' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300'}`}>
                             {item.icon}
                           </div>
                           <span className="text-xs">{item.name}</span>
@@ -606,39 +914,41 @@ export const SettingsPage: React.FC = () => {
 
           {/* Right / Live Visual Preview */}
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
-              <Eye className="w-4 h-4 text-blue-600" />
+            <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+              <Eye className="w-4 h-4 text-slate-800 dark:text-slate-200" />
               <span>معاينة حية لترويسة التقرير المطبوع</span>
             </h3>
 
-            <div className="bg-white rounded-2xl p-6 border-2 border-blue-200 shadow-md space-y-4">
-              <div className="flex items-center justify-between pb-4 border-b-2 border-blue-600">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border-2 border-slate-200 dark:border-slate-800 shadow-md space-y-4">
+              <div className="flex items-center justify-between pb-4 border-b-2 border-slate-800 dark:border-slate-200">
                 <div className="flex items-center gap-3">
                   {settings.showLogoInReports && (
                     settings.logoType === 'custom' && settings.customLogoUrl ? (
-                      <img
-                        src={settings.customLogoUrl}
-                        alt="Logo"
-                        className="max-h-12 max-w-[90px] object-contain rounded-md"
-                      />
+                      <div className="max-h-12 max-w-[100px] flex items-center justify-center p-1 bg-white/10 rounded">
+                        <img
+                          src={settings.customLogoUrl}
+                          alt="Logo"
+                          className="max-h-11 max-w-[90px] object-contain rounded"
+                        />
+                      </div>
                     ) : (
-                      <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                      <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-900 dark:text-slate-100">
                         {presetIconsList.find(p => p.id === settings.presetIcon)?.icon || <Building className="w-5 h-5" />}
                       </div>
                     )
                   )}
                   <div>
-                    <h4 className="font-extrabold text-blue-950 text-sm">
-                      {settings.orgName || 'نظام إدارة الحضور'}
+                    <h4 className="font-extrabold text-slate-900 dark:text-white text-sm">
+                      {settings.orgName || 'نظام إدارة الحضور والفعاليات'}
                     </h4>
-                    <p className="text-[11px] text-gray-500">
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
                       {settings.orgSubtitle || 'تقرير الحضور الرسمي المعتمد'}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1.5 text-gray-600">
+              <div className="bg-gray-50 dark:bg-slate-800/80 rounded-xl p-3 text-xs space-y-1.5 text-gray-600 dark:text-gray-300">
                 <div className="flex justify-between font-bold text-gray-800">
                   <span>الفعالية: ملتقى القيادات والمبتكرين</span>
                   <span className="text-emerald-600 font-mono">حضور: 85%</span>
@@ -684,17 +994,22 @@ export const SettingsPage: React.FC = () => {
                     }}
                     className={`p-4 rounded-2xl border text-right transition-all flex items-center justify-between cursor-pointer ${
                       isSelected
-                        ? 'bg-gray-50 border-gray-900 ring-2 ring-gray-900/10 shadow-xs'
-                        : 'bg-white border-gray-200 hover:bg-gray-50'
+                        ? 'bg-slate-50 dark:bg-slate-900 border-slate-900 dark:border-white ring-2 ring-slate-900/10 dark:ring-white/20 shadow-xs'
+                        : 'bg-white dark:bg-slate-900/60 border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/40'
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-7 h-7 rounded-xl ${theme.bg} shadow-2xs flex items-center justify-center text-white`}>
+                      <div className={`w-8 h-8 rounded-xl ${theme.bg} shadow-2xs flex items-center justify-center shrink-0 border border-black/10 dark:border-white/10`}>
                         {isSelected && <Check className="w-4 h-4" />}
                       </div>
-                      <span className={`text-xs sm:text-sm font-bold ${isSelected ? 'text-[#1A1A1A]' : 'text-gray-700'}`}>
-                        {theme.name}
-                      </span>
+                      <div>
+                        <span className={`text-xs sm:text-sm font-bold block ${isSelected ? 'text-slate-950 dark:text-white' : 'text-gray-800 dark:text-gray-200'}`}>
+                          {theme.name}
+                        </span>
+                        <span className="text-[10px] text-gray-400 dark:text-gray-400 block mt-0.5">
+                          {theme.desc}
+                        </span>
+                      </div>
                     </div>
                   </button>
                 );
@@ -705,8 +1020,8 @@ export const SettingsPage: React.FC = () => {
           {/* Mode & Font Preference */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Mode */}
-            <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-[#1A1A1A]">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-gray-200 dark:border-slate-800 shadow-sm space-y-4">
+              <h3 className="text-base font-bold text-[#1A1A1A] dark:text-white">
                 وضع الإضاءة
               </h3>
               <div className="grid grid-cols-3 gap-2.5">
@@ -724,8 +1039,8 @@ export const SettingsPage: React.FC = () => {
                     }}
                     className={`p-3 rounded-xl border text-center text-xs font-bold transition-all cursor-pointer ${
                       settings.mode === m.id
-                        ? 'bg-blue-50 border-blue-600 text-blue-900 ring-2 ring-blue-500/20'
-                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs dark:bg-zinc-100 dark:text-zinc-950 dark:border-white'
+                        : 'bg-white dark:bg-slate-950 border-gray-200 dark:border-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800'
                     }`}
                   >
                     {m.name}
@@ -735,8 +1050,8 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             {/* Font Scale */}
-            <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-[#1A1A1A]">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-gray-200 dark:border-slate-800 shadow-sm space-y-4">
+              <h3 className="text-base font-bold text-[#1A1A1A] dark:text-white">
                 حجم العرض والخطوط
               </h3>
               <div className="grid grid-cols-3 gap-2.5">
@@ -754,8 +1069,8 @@ export const SettingsPage: React.FC = () => {
                     }}
                     className={`p-3 rounded-xl border text-center text-xs font-bold transition-all cursor-pointer ${
                       settings.fontSize === f.id
-                        ? 'bg-blue-50 border-blue-600 text-blue-900 ring-2 ring-blue-500/20'
-                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs dark:bg-zinc-100 dark:text-zinc-950 dark:border-white'
+                        : 'bg-white dark:bg-slate-950 border-gray-200 dark:border-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800'
                     }`}
                   >
                     {f.name}

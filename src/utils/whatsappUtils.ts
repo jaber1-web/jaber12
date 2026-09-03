@@ -129,6 +129,17 @@ export function openWhatsAppChat(phone: string, message: string): boolean {
   if (!cleanPhone) return false;
   const encodedText = encodeURIComponent(message);
   const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`;
-  window.open(url, '_blank', 'noopener,noreferrer');
-  return true;
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    return true;
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return true;
+  }
 }

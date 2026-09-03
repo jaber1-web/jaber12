@@ -39,6 +39,7 @@ export const Navbar: React.FC = () => {
 
   const getThemeBgColor = (theme: ThemeColor) => {
     switch (theme) {
+      case 'monochrome': return 'bg-black text-white dark:bg-zinc-100 dark:text-black';
       case 'emerald': return 'bg-emerald-600';
       case 'violet': return 'bg-purple-600';
       case 'amber': return 'bg-amber-600';
@@ -53,6 +54,7 @@ export const Navbar: React.FC = () => {
 
   const getThemeLightBgColor = (theme: ThemeColor) => {
     switch (theme) {
+      case 'monochrome': return 'bg-zinc-100 text-zinc-900 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700';
       case 'emerald': return 'bg-emerald-50 text-emerald-700 border-emerald-100';
       case 'violet': return 'bg-purple-50 text-purple-700 border-purple-100';
       case 'amber': return 'bg-amber-50 text-amber-700 border-amber-100';
@@ -98,8 +100,8 @@ export const Navbar: React.FC = () => {
           )}
           <div className="hidden min-[380px]:block">
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <h1 className="text-sm sm:text-base font-extrabold leading-tight text-[#1A1A1A] max-w-[180px] sm:max-w-[280px] truncate">
-                {settings.orgName || 'نظام إدارة الحضور'}
+              <h1 className="text-sm sm:text-base font-extrabold leading-tight text-slate-900 dark:text-slate-100 max-w-[240px] sm:max-w-[340px] truncate">
+                {settings.orgName || 'نظام إدارة الحضور والفعاليات'}
               </h1>
               <span className={`hidden lg:inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border font-sans ${getThemeLightBgColor(settings.themeColor)}`}>
                 معتمد

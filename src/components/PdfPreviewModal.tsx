@@ -238,11 +238,11 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
         </div>
 
         {/* Paper Document Preview Body */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-8 bg-gray-200/70 flex justify-center">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-8 bg-gray-200/70 dark:bg-slate-900/90 flex justify-center">
           <div
             id="pdf-printable-document"
             ref={paperDocRef}
-            className="bg-white w-full max-w-3xl rounded-xl shadow-lg border border-gray-300 p-5 sm:p-8 font-sans space-y-4 text-[#1A1A1A]"
+            className="preserve-light bg-white w-full max-w-3xl rounded-xl shadow-lg border border-gray-300 p-5 sm:p-8 font-sans space-y-4 text-[#1A1A1A]"
           >
             {/* Header Letterhead */}
             <div className="flex items-center justify-between pb-3 border-b-2 border-blue-600 gap-4">

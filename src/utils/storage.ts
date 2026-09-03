@@ -229,7 +229,11 @@ export function getStoredSettings(): AppSettings {
       return DEFAULT_SETTINGS;
     }
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    const loaded = { ...DEFAULT_SETTINGS, ...parsed };
+    if (!loaded.orgName || loaded.orgName === 'نظام إدارة الحضور') {
+      loaded.orgName = 'نظام إدارة الحضور والفعاليات';
+    }
+    return loaded;
   } catch (e) {
     console.error('Error loading settings', e);
     return DEFAULT_SETTINGS;

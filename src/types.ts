@@ -1,6 +1,6 @@
 export type AttendanceStatus = 'present' | 'absent' | 'pending';
 
-export type ThemeColor = 'blue' | 'emerald' | 'violet' | 'amber' | 'slate' | 'rose' | 'teal';
+export type ThemeColor = 'blue' | 'emerald' | 'violet' | 'amber' | 'slate' | 'rose' | 'teal' | 'monochrome';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type FontSizePreference = 'compact' | 'normal' | 'comfortable';
 export type LogoPreset = 'crown' | 'building' | 'shield' | 'award' | 'users' | 'star' | 'flame' | 'sparkles';
@@ -54,6 +54,14 @@ export interface EventAttendee {
   markedAt?: string;
 }
 
+export interface AttendanceRound {
+  id: string;
+  name: string;
+  createdAt: string;
+  notes?: string;
+  records: Record<string, AttendanceStatus>;
+}
+
 export interface EventItem {
   id: string;
   title: string;
@@ -61,6 +69,8 @@ export interface EventItem {
   location?: string;
   notes?: string;
   attendees: EventAttendee[];
+  rounds?: AttendanceRound[];
+  activeRoundId?: string;
   createdAt: string;
   updatedAt: string;
 }
